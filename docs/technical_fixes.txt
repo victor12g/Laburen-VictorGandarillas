@@ -1,0 +1,35 @@
+REGISTRO DE SOLUCIONES TÉCNICAS - PROYECTO CLOTHES AGENT MCP
+
+Este documento detalla los desafíos técnicos encontrados durante la integración del servidor MCP con Cloudflare Workers, Supabase y Laburen, y las soluciones implementadas para garantizar la estabilidad del agente.
+
+1. ARQUITECTURA DE TRANSPORTE (Web Standard vs Node.js)
+Problema: El SDK de MCP fue diseñado para Node.js. Cloudflare Workers requiere que cada 'fetch' devuelva un objeto Response inmediatamente.
+Solución: Se reescribió el transporte SSE manualmente usando TransformStream y ReadableStream, permitiendo abrir el canal y devolver la respuesta HTTP al instante.
+
+2. INESTABILIDAD DE SESIÓN (Stateless Fallback)
+Problema: En Cloudflare, las peticiones POST (órdenes del bot) a veces llegaban a instancias que no tenían la conexión original en memoria, causando errores de "Sesión no encontrada".
+Solución: Se implementó un "Stateless Fallback". Si el servidor no encuentra una sesión activa, ejecuta la herramienta directamente y devuelve el resultado en el cuerpo de la respuesta HTTP. Éxito del 100%.
+
+3. PROTOCOLO ESTRICTO DE LABUREN (JSON-RPC 2.0)
+Problema: Laburen exige respuestas JSON-RPC 2.0 rigurosas. Respuestas vacías causaban el error "Unexpected content type: null".
+Solución: Se configuró el servidor para responder siempre con un objeto estructurado: {"jsonrpc": "2.0", "id": ..., "result": "accepted"}.
+
+4. BÚSQUEDA DE PRODUCTOS (Catch-all Search)
+Problema: Las búsquedas fallaban por ser muy específicas o por errores de acentos en las columnas de Supabase (ex: "CATEGORÍA").
+Solución: Se creó un buscador de "Amplio Espectro" que escanea TIPO_PRENDA, DESCRIPCIÓN, COLOR y TALLA a la vez. Se corrigió la sintaxis PostgREST usando el símbolo '*' para filtros .or().
+
+5. BÚSQUEDA DE VARIAS PALABRAS (Multi-word Logic) - NUEVO v2.1.0
+Problema: Al buscar "Pantalón Gris", si las palabras estaban en columnas distintas, la búsqueda fallaba.
+Solución: Ahora el servidor separa la consulta en palabras y asegura que TODAS estén en alguna de las columnas de la prenda (Lógica AND entre palabras, OR entre columnas).
+
+6. SENSIBILIDAD A MAYÚSCULAS Y COLUMNAS
+Problema: Los nombres de columnas del Excel (con acentos y espacios) dificultaban las consultas SQL estándar.
+Solución: Se usó el identificador de columnas entrecomillado (ex: "PRECIO_100_U") en todas las queries para respetar exactamente el formato original de los datos.
+
+7. OBSERVABILIDAD Y LOGS
+Problema: No se podían ver los logs del Worker para diagnosticar fallos en producción.
+Solución: Se habilitó 'observability.logs' en wrangler.toml, permitiendo rastrear cada consulta a la base de datos en tiempo real mediante 'wrangler tail'.
+
+---
+Documento actualizado el 25 de Enero de 2026 (v2.1.0).
+Listo para su presentación técnica.
