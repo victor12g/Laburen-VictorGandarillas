@@ -61,14 +61,14 @@ export const TOOLS = [
     },
     {
         name: "handover_to_human",
-        description: "Deriva la conversación a un agente humano en Chatwoot. Etiqueta y abre la conversación.",
+        description: "Deriva la conversación a un agente humano en Chatwoot. Crea conversación si no existe, abre la conversación y agrega etiquetas.",
         inputSchema: {
             type: "object",
             properties: {
-                conversation_id: { type: "string", description: "ID de la conversación en Chatwoot" },
+                cart_id: { type: "string", description: "ID del carrito (conversación local)" },
                 reason: { type: "string", description: "Motivo de la derivación" }
             },
-            required: ["conversation_id", "reason"]
+            required: ["cart_id", "reason"]
         }
     }
 ];

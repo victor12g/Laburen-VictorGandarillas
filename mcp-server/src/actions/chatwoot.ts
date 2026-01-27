@@ -1,10 +1,10 @@
 export async function handoverToHuman(supabase: any, args: any, env: any) {
     try {
-        const { conversation_id, reason } = args;
+        const { cart_id, reason } = args;
 
-        if (!conversation_id || !reason) {
+        if (!cart_id || !reason) {
             return {
-                content: [{ type: "text", text: "Error: Se requieren conversation_id y reason" }],
+                content: [{ type: "text", text: "Error: Se requieren cart_id y reason" }],
                 isError: true
             };
         }
@@ -12,86 +12,117 @@ export async function handoverToHuman(supabase: any, args: any, env: any) {
         const baseUrl = env.CHATWOOT_BASE_URL;
         const accountId = env.CHATWOOT_ACCOUNT_ID;
         const apiToken = env.CHATWOOT_API_TOKEN;
+        const inboxId = parseInt(env.CHATWOOT_INBOX_ID);
+        const contactId = parseInt(env.CHATWOOT_CONTACT_ID);
+        const sourceId = env.CHATWOOT_SOURCE_ID;
 
-        console.log(`[CHATWOOT] Intentando derivar conversación ${conversation_id}`);
-        console.log(`[CHATWOOT] Base URL: ${baseUrl}`);
-        console.log(`[CHATWOOT] Account ID: ${accountId}`);
-        console.log(`[CHATWOOT] Token length: ${apiToken?.length}`);
+        console.log(`[CHATWOOT] Iniciando derivación para carrito: ${cart_id}`);
+        console.log(`[CHATWOOT] Inbox: ${inboxId}, Contact: ${contactId}`);
 
-        try {
-            // 1. Cambiar estado de la conversación a "open"
-            const statusResponse = await fetch(
-                `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversation_id}`,
+        let conversationId: number;
+
+        // 1. Verificar si ya existe conversación para este carrito
+        const { data: cartData } = await supabase
+            .from("carts")
+            .select("chatwoot_conversation_id")
+            .eq("id", cart_id)
+            .single();
+
+        if (cartData?.chatwoot_conversation_id) {
+            conversationId = cartData.chatwoot_conversation_id;
+            console.log(`[CHATWOOT] Usando conversación existente: ${conversationId}`);
+        } else {
+            // 2. Crear nueva conversación en Chatwoot
+            console.log(`[CHATWOOT] Creando nueva conversación...`);
+            const createResp = await fetch(
+                `${baseUrl}/api/v1/accounts/${accountId}/conversations`,
                 {
-                    method: "PATCH",
+                    method: "POST",
                     headers: {
                         "Content-Type": "application/json",
                         "api_access_token": apiToken,
                         "Accept": "application/json"
                     },
                     body: JSON.stringify({
-                        status: "open",
-                    }),
+                        inbox_id: inboxId,
+                        contact_id: contactId,
+                        source_id: sourceId
+                    })
                 }
             );
 
-            console.log(`[CHATWOOT] Response status: ${statusResponse.status}`);
-
-            if (!statusResponse.ok) {
-                const errorText = await statusResponse.text();
-                console.error(`[CHATWOOT] Error ${statusResponse.status}:`, errorText);
-                throw new Error(`Error actualizando conversación: ${statusResponse.status}`);
+            if (!createResp.ok) {
+                const errorText = await createResp.text();
+                console.error(`[CHATWOOT] Error creando conversación:`, errorText);
+                throw new Error(`Error creando conversación: ${createResp.status}`);
             }
 
-            console.log(`[CHATWOOT] Conversación ${conversation_id} abierta`);
+            const createData = await createResp.json();
+            conversationId = createData.id;
+            console.log(`[CHATWOOT] Conversación creada: ${conversationId}`);
 
-            // 2. Intentar añadir etiquetas (opcional, no fallar si no funciona)
-            try {
-                const labelsResponse = await fetch(
-                    `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversation_id}/labels`,
-                    {
-                        method: "POST",
-                        headers: {
-                            "Content-Type": "application/json",
-                            "api_access_token": apiToken,
-                            "Accept": "application/json"
-                        },
-                        body: JSON.stringify({
-                            labels: ["handover", reason.toLowerCase().replace(/\s+/g, "_")],
-                        }),
-                    }
-                );
-
-                if (labelsResponse.ok) {
-                    console.log(`[CHATWOOT] Etiquetas agregadas a conversación ${conversation_id}`);
-                }
-            } catch (labelErr) {
-                console.warn(`[CHATWOOT] Advertencia al agregar etiquetas (no crítico)`);
-            }
-
-            return {
-                content: [{
-                    type: "text",
-                    text: `🔄 **Derivando a un agente humano...**\n\n**Motivo:** ${reason}\n\nUn especialista se comunicará contigo pronto para ayudarte.`
-                }]
-            };
-
-        } catch (apiErr: any) {
-            console.error("[CHATWOOT-API]", apiErr.message);
-            
-            // Si falla por autenticación, dar instrucciones
-            if (apiErr.message.includes("401")) {
-                return {
-                    content: [{
-                        type: "text",
-                        text: `🔄 Derivación solicitada\n\n**Motivo:** ${reason}\n\nUn especialista se comunicará contigo pronto.\n\n⚠️ Nota: Hubo un problema con las credenciales de Chatwoot, pero tu solicitud fue registrada.`
-                    }],
-                    isError: false
-                };
-            }
-            
-            throw apiErr;
+            // Guardar en BD
+            await supabase
+                .from("carts")
+                .update({ chatwoot_conversation_id: conversationId })
+                .eq("id", cart_id);
         }
+
+        // 3. Cambiar estado de la conversación a "open"
+        const statusResponse = await fetch(
+            `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}`,
+            {
+                method: "PATCH",
+                headers: {
+                    "Content-Type": "application/json",
+                    "api_access_token": apiToken,
+                    "Accept": "application/json"
+                },
+                body: JSON.stringify({
+                    status: "open"
+                })
+            }
+        );
+
+        if (!statusResponse.ok) {
+            const errorText = await statusResponse.text();
+            console.error(`[CHATWOOT] Error al abrir conversación:`, errorText);
+            throw new Error(`Error abriendo conversación: ${statusResponse.status}`);
+        }
+
+        console.log(`[CHATWOOT] Conversación ${conversationId} abierta`);
+
+        // 4. Agregar etiquetas (opcional)
+        try {
+            const labelsResponse = await fetch(
+                `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}/labels`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "api_access_token": apiToken,
+                        "Accept": "application/json"
+                    },
+                    body: JSON.stringify({
+                        labels: ["handover", reason.toLowerCase().replace(/\s+/g, "_")]
+                    })
+                }
+            );
+
+            if (labelsResponse.ok) {
+                console.log(`[CHATWOOT] Etiquetas agregadas`);
+            }
+        } catch (labelErr) {
+            console.warn(`[CHATWOOT] Advertencia al agregar etiquetas (no crítico)`);
+        }
+
+        return {
+            content: [{
+                type: "text",
+                text: `🔄 **Derivando a un agente humano...**\n\n**Motivo:** ${reason}\n\nUn especialista se comunicará contigo pronto para ayudarte.`
+            }]
+        };
+
     } catch (err: any) {
         console.error("[HANDOVER-ERROR]", err.message);
         return {

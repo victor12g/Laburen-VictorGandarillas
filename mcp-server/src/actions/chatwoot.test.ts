@@ -5,31 +5,34 @@ describe("Chatwoot Integration Tests", () => {
     const mockEnv = {
         CHATWOOT_BASE_URL: "https://chatwootchallenge.laburen.com",
         CHATWOOT_ACCOUNT_ID: "44",
-        CHATWOOT_API_TOKEN: "bffQ4etC59X39B3n73Eqtksu"
+        CHATWOOT_API_TOKEN: "bffQ4etC59X39B3n73Eqtksu",
+        CHATWOOT_INBOX_ID: "50",
+        CHATWOOT_CONTACT_ID: "54",
+        CHATWOOT_SOURCE_ID: "whatsapp:+542215232385"
     };
 
     const mockSupabase = null;
 
     describe("handoverToHuman", () => {
         it("debe rechazar si faltan parámetros requeridos", async () => {
-            const result = await handoverToHuman(mockSupabase, { conversation_id: 2 }, mockEnv);
+            const result = await handoverToHuman(mockSupabase, { cart_id: "test-cart-1" }, mockEnv);
             expect(result.isError).toBe(true);
-            expect(result.content[0].text).toContain("Se requieren conversation_id y reason");
+            expect(result.content[0].text).toContain("Se requieren cart_id y reason");
         });
 
-        it("debe rechazar si falta conversation_id", async () => {
+        it("debe rechazar si falta cart_id", async () => {
             const result = await handoverToHuman(mockSupabase, { reason: "Test" }, mockEnv);
             expect(result.isError).toBe(true);
         });
 
         it("debe rechazar si falta reason", async () => {
-            const result = await handoverToHuman(mockSupabase, { conversation_id: 2 }, mockEnv);
+            const result = await handoverToHuman(mockSupabase, { cart_id: "test-cart-1" }, mockEnv);
             expect(result.isError).toBe(true);
         });
 
         it("debe procesar derivación incluso con credenciales inválidas", async () => {
             const result = await handoverToHuman(mockSupabase, {
-                conversation_id: 2,
+                cart_id: "test-cart-1",
                 reason: "Cliente solicita soporte técnico"
             }, mockEnv);
 
@@ -41,7 +44,7 @@ describe("Chatwoot Integration Tests", () => {
 
         it("debe convertir reason a etiqueta válida", async () => {
             const result = await handoverToHuman(mockSupabase, {
-                conversation_id: 2,
+                cart_id: "test-cart-1",
                 reason: "Cliente Necesita Información Especial"
             }, mockEnv);
 
@@ -91,10 +94,10 @@ describe("Chatwoot Integration Tests", () => {
 
     describe("Integration Tests - Chatwoot API Real", () => {
         it("debe procesar derivación de conversación real", async () => {
-            const conversationId = 2;
+            const cartId = "test-cart-integration";
             
             const result = await handoverToHuman(mockSupabase, {
-                conversation_id: conversationId,
+                cart_id: cartId,
                 reason: "Test automation - Handover integration"
             }, mockEnv);
 
