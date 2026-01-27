@@ -1,22 +1,33 @@
 {
   "name": "mcp-clothes-agent",
   "version": "1.0.0",
-  "description": "MCP Server for the Laburen Challenge",
-  "main": "src/index.ts",
+  "description": "MCP Server for Clothes Sales Agent with Chatwoot Integration",
+  "type": "module",
+  "main": "dist/index.js",
   "scripts": {
-    "build": "wrangler deploy",
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "test": "vitest run"
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src --ext .ts",
+    "build": "tsc"
   },
+  "keywords": [
+    "mcp",
+    "clothes",
+    "sales",
+    "chatwoot",
+    "agent"
+  ],
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "@supabase/supabase-js": "^2.39.0"
+    "@modelcontextprotocol/sdk": "latest",
+    "@supabase/supabase-js": "latest"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.0.0",
-    "typescript": "^5.0.0",
-    "vitest": "^4.0.18",
-    "wrangler": "^3.0.0"
+    "@types/node": "latest",
+    "typescript": "latest",
+    "vitest": "latest",
+    "wrangler": "latest"
   }
 }

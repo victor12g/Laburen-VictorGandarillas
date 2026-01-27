@@ -63,8 +63,8 @@ export async function addToCart(supabase: SupabaseClient, args: CartArgs) {
     // Obtener stock
     const { data: product, error: pError } = await supabase
         .from("products")
-        .select("CANTIDAD_DISPONIBLE, TIPO_PRENDA, COLOR, TALLA")
-        .eq("ID", productId)
+        .select("stock, name, color, size")
+        .eq("id", productId)
         .single();
 
     if (pError || !product) {
@@ -74,14 +74,14 @@ export async function addToCart(supabase: SupabaseClient, args: CartArgs) {
     const currentQty = currentItem?.qty || 0;
     const totalQty = currentQty + qty;
 
-    console.log(`[CART] Stock Check: Actual=${currentQty}, Nuevo=${qty}, Total=${totalQty}, Disponible=${product.CANTIDAD_DISPONIBLE}`);
+    console.log(`[CART] Stock Check: Actual=${currentQty}, Nuevo=${qty}, Total=${totalQty}, Disponible=${product.stock}`);
 
     // Validar stock con el TOTAL acumulado
-    if (product.CANTIDAD_DISPONIBLE < totalQty) {
+    if (product.stock < totalQty) {
         return {
             content: [{
                 type: "text",
-                text: `⚠️ Stock insuficiente. Tienes ${currentQty} en carrito y quieres sumar ${qty} (Total: ${totalQty}), pero solo hay ${product.CANTIDAD_DISPONIBLE} disponibles.`
+                text: `⚠️ Stock insuficiente. Tienes ${currentQty} en carrito y quieres sumar ${qty} (Total: ${totalQty}), pero solo hay ${product.stock} disponibles.`
             }],
             isError: true
         };
@@ -99,7 +99,7 @@ export async function addToCart(supabase: SupabaseClient, args: CartArgs) {
         throw iError;
     }
 
-    return { content: [{ type: "text", text: `✅ Producto añadido. ${product.TIPO_PRENDA} ${product.COLOR}: ahora tienes ${totalQty} unidades.` }] };
+    return { content: [{ type: "text", text: `✅ Producto añadido. ${product.name} ${product.color}: ahora tienes ${totalQty} unidades.` }] };
 }
 
 export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
@@ -135,8 +135,8 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
     // 1. Verificar existencia y stock del producto
     const { data: product, error: pError } = await supabase
         .from("products")
-        .select("ID, CANTIDAD_DISPONIBLE, TIPO_PRENDA, COLOR, TALLA")
-        .eq("ID", productId)
+        .select("id, stock, name, color, size")
+        .eq("id", productId)
         .single();
 
     if (pError || !product) {
@@ -163,11 +163,11 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
     // ESTO ES LO MÁS SEGURO y evita la lógica de "suma oculta".
 
     // VALIDACIÓN DE STOCK CONTRA LA CANTIDAD SOLICITADA (qty es el target)
-    if (product.CANTIDAD_DISPONIBLE < qty) {
+    if (product.stock < qty) {
         return {
             content: [{
                 type: "text",
-                text: `⚠️ Stock insuficiente. Quieres ${qty} unidades, pero solo quedan ${product.CANTIDAD_DISPONIBLE} disponibles de ${product.TIPO_PRENDA} ${product.COLOR}.`
+                text: `⚠️ Stock insuficiente. Quieres ${qty} unidades, pero solo quedan ${product.stock} disponibles de ${product.name} ${product.color}.`
             }],
             isError: true
         };
@@ -185,7 +185,7 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
         throw iError;
     }
 
-    return { content: [{ type: "text", text: `✅ Carrito actualizado. ${product.TIPO_PRENDA}: ${qty} unidades.` }] };
+    return { content: [{ type: "text", text: `✅ Carrito actualizado. ${product.name}: ${qty} unidades.` }] };
 }
 
 export async function clearCart(supabase: SupabaseClient, args: CartArgs) {
@@ -224,12 +224,12 @@ export async function viewCart(supabase: SupabaseClient, args: CartArgs) {
         .select(`
             qty,
             products (
-                TIPO_PRENDA,
-                TALLA,
-                COLOR,
-                PRECIO_50_U,
-                PRECIO_100_U,
-                PRECIO_200_U
+                name,
+                size,
+                color,
+                price_50_u,
+                price_100_u,
+                price_200_u
             )
         `)
         .eq("cart_id", cartId);
@@ -246,16 +246,16 @@ export async function viewCart(supabase: SupabaseClient, args: CartArgs) {
 
     for (const item of data) {
         const p = item.products as any;
-        let unitPrice = p.PRECIO_50_U; // Precio base (mayorista mínimo)
+        let unitPrice = p.price_50_u; // Precio base (mayorista mínimo)
 
         // Aplicar escala de precios
-        if (item.qty >= 200) unitPrice = p.PRECIO_200_U;
-        else if (item.qty >= 100) unitPrice = p.PRECIO_100_U;
+        if (item.qty >= 200) unitPrice = p.price_200_u;
+        else if (item.qty >= 100) unitPrice = p.price_100_u;
 
         const subtotal = item.qty * unitPrice;
         totalGeneral += subtotal;
 
-        itemsDetalle.push(`- ${item.qty}x ${p.TIPO_PRENDA} ${p.COLOR} (${p.TALLA}) a $${unitPrice} = $${subtotal}`);
+        itemsDetalle.push(`- ${item.qty}x ${p.name} ${p.color} (${p.size}) a $${unitPrice} = $${subtotal}`);
     }
 
     const responseText = `🛒 *CARRITO ACTUAL*:\n\n${itemsDetalle.join("\n")}\n\n💰 *TOTAL ESTIMADO: $${totalGeneral}*`;

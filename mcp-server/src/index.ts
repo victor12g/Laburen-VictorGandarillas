@@ -5,30 +5,31 @@ import { TOOLS } from "./tools/index.js";
 import { listProducts } from "./actions/products.js";
 import {
     createCart,
-    addToCart,
     updateCart,
     clearCart,
     viewCart
 } from "./actions/cart.js";
+import { handoverToHuman } from "./actions/chatwoot.js";
 
 // --- CONFIGURACIÓN ---
 interface Env {
     SUPABASE_URL: string;
     SUPABASE_ANON_KEY: string;
+    CHATWOOT_BASE_URL: string;
+    CHATWOOT_ACCOUNT_ID: string;
+    CHATWOOT_API_TOKEN: string;
 }
 
 const sessions = new Map<string, (message: any) => void>();
 
 // --- HANDLER DE HERRAMIENTAS ---
-async function handleToolCall(name: string, args: any, supabase: any) {
+async function handleToolCall(name: string, args: any, supabase: any, env: Env) {
     try {
         switch (name) {
             case "list_products":
                 return await listProducts(supabase, args);
             case "create_cart":
                 return await createCart(supabase, args);
-            case "add_to_cart":
-                return await addToCart(supabase, args);
             case "update_cart":
                 return await updateCart(supabase, args);
             case "view_cart":
@@ -36,7 +37,7 @@ async function handleToolCall(name: string, args: any, supabase: any) {
             case "clear_cart":
                 return await clearCart(supabase, args);
             case "handover_to_human":
-                return { content: [{ type: "text", text: `🔄 Derivando a un humano por: ${args?.reason}` }] };
+                return await handoverToHuman(supabase, args, env);
             default:
                 return { content: [{ type: "text", text: "Herramienta no encontrada" }], isError: true };
         }
@@ -88,7 +89,6 @@ export default {
 
             if (request.method === "POST") {
                 try {
-                    // LOG COMPLETO DE LA PETICIÓN HTTP (Para diagnóstico)
                     console.log("=== PETICIÓN HTTP COMPLETA ===");
                     console.log("URL:", request.url);
                     console.log("Method:", request.method);
@@ -119,7 +119,7 @@ export default {
                     if (body.method === "tools/call") {
                         const { name, arguments: args } = body.params;
                         console.log(`[MCP-STATELESS] Ejecutando tool directa: ${name}`);
-                        const result = await handleToolCall(name, args, supabase) as any;
+                        const result = await handleToolCall(name, args, supabase, env) as any;
                         return new Response(JSON.stringify({
                             jsonrpc: "2.0",
                             id: body.id,
@@ -148,11 +148,11 @@ export default {
             }
         }
 
-        // Configurar handlers del servidor MCP (solo para cuando SÍ hay sesión activa en memoria)
+        // Configurar handlers del servidor MCP
         server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
         server.setRequestHandler(CallToolRequestSchema, async (request: any) => {
             const { name, arguments: args } = request.params;
-            return await handleToolCall(name, args, supabase);
+            return await handleToolCall(name, args, supabase, env);
         });
 
         return new Response("Not found", { status: 404 });

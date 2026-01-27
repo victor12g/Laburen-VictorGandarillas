@@ -1,37 +1,30 @@
--- Borrar tablas anteriores para evitar conflictos
-DROP TABLE IF EXISTS cart_items;
-
-DROP TABLE IF EXISTS products;
-
-DROP TABLE IF EXISTS carts;
-
--- Products Table (Nombres de columnas EXACTOS al Excel para mapeo automático)
-CREATE TABLE products (
-    "ID" TEXT PRIMARY KEY,
-    "TIPO_PRENDA" TEXT,
-    "TALLA" TEXT,
-    "COLOR" TEXT,
-    "CANTIDAD_DISPONIBLE" INTEGER DEFAULT 0,
-    "PRECIO_50_U" DECIMAL(10, 2),
-    "PRECIO_100_U" DECIMAL(10, 2),
-    "PRECIO_200_U" DECIMAL(10, 2),
-    "DISPONIBLE" TEXT,
-    "CATEGORÍA" TEXT,
-    "DESCRIPCIÓN" TEXT
+-- Products Table (Campos según Challenge 2.2, manteniendo datos del Excel)
+CREATE TABLE IF NOT EXISTS products (
+    id TEXT PRIMARY KEY,
+    name TEXT,
+    description TEXT,
+    price_100_u DECIMAL(10, 2),
+    stock INTEGER DEFAULT 0,
+    size TEXT,
+    color TEXT,
+    available TEXT,
+    category TEXT,
+    price_50_u DECIMAL(10, 2),
+    price_200_u DECIMAL(10, 2)
 );
 
 -- Carts Table (un carrito por conversación, usa conversation_id de Laburen)
-CREATE TABLE carts (
+CREATE TABLE IF NOT EXISTS carts (
     id TEXT PRIMARY KEY, -- conversation_id de Laburen/Chatwoot
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Cart Items Table
-CREATE TABLE cart_items (
+CREATE TABLE IF NOT EXISTS cart_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid (),
     cart_id TEXT REFERENCES carts (id) ON DELETE CASCADE,
-    product_id TEXT REFERENCES products ("ID"),
+    product_id TEXT REFERENCES products (id),
     qty INTEGER NOT NULL CHECK (qty > 0),
     UNIQUE (cart_id, product_id)
 );

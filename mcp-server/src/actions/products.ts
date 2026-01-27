@@ -2,22 +2,22 @@ import { SupabaseClient } from "@supabase/supabase-js";
 import { toFuzzy } from "../lib/fuzzy.js";
 
 interface ProductArgs {
-    tipo_prenda?: string;
+    name?: string;
     category?: string;
     color?: string;
-    talla?: string;
+    size?: string;
 }
 
 export async function listProducts(supabase: SupabaseClient, args: ProductArgs) {
-    const { tipo_prenda, category, color, talla } = args;
+    const { name, category, color, size } = args;
 
     let dbQuery = supabase.from("products")
         .select("*")
-        .ilike("DISPONIBLE", "%s_%"); // Solo productos disponibles ("Sí", "Si", etc.)
+        .ilike("available", "%s_%"); // Solo productos disponibles ("Sí", "Si", etc.)
 
-    // Búsqueda en TIPO_PRENDA con manejo de plurales básicos (remeras -> remera, pantalones -> pantalon)
-    if (tipo_prenda) {
-        let cleanType = tipo_prenda.trim().toLowerCase();
+    // Búsqueda en name con manejo de plurales básicos (remeras -> remera, pantalones -> pantalon)
+    if (name) {
+        let cleanType = name.trim().toLowerCase();
 
         // Normalización básica de plurales en español
         if (cleanType.endsWith("es")) {
@@ -29,25 +29,25 @@ export async function listProducts(supabase: SupabaseClient, args: ProductArgs) 
         // Convertir a fuzzy: reemplazar vocales por _ para ignorar acentos
         const fuzzyTerm = cleanType.replace(/[aeiouáéíóúAEIOUÁÉÍÓÚ]/g, "_");
 
-        console.log(`[SEARCH] Buscando "${tipo_prenda}" (normalizado: "${cleanType}") como fuzzy: "${fuzzyTerm}"`);
+        console.log(`[SEARCH] Buscando "${name}" (normalizado: "${cleanType}") como fuzzy: "${fuzzyTerm}"`);
 
-        // Buscamos en TIPO_PRENDA OR DESCRIPCIÓN
-        dbQuery = dbQuery.or(`"TIPO_PRENDA".ilike.*${fuzzyTerm}*,"DESCRIPCIÓN".ilike.*${fuzzyTerm}*`);
+        // Buscamos en name OR description
+        dbQuery = dbQuery.or(`name.ilike.*${fuzzyTerm}*,description.ilike.*${fuzzyTerm}*`);
     }
 
     // Filtros específicos adicionales con fuzzy para categoría y color
     if (category) {
         const fuzzyCat = toFuzzy(category);
         console.log(`[SEARCH] Buscando categoría "${category}" como fuzzy: "${fuzzyCat}"`);
-        dbQuery = dbQuery.ilike("CATEGORÍA", `%${fuzzyCat}%`);
+        dbQuery = dbQuery.ilike("category", `%${fuzzyCat}%`);
     }
     if (color) {
         const fuzzyColor = color.replace(/[aeiouáéíóúAEIOUÁÉÍÓÚ]/g, "_");
-        dbQuery = dbQuery.ilike("COLOR", `%${fuzzyColor}%`);
+        dbQuery = dbQuery.ilike("color", `%${fuzzyColor}%`);
     }
-    if (talla) {
-        const t = talla.trim().toUpperCase();
-        dbQuery = dbQuery.or(`"TALLA".eq.${t},"TALLA".ilike.*${t}*`);
+    if (size) {
+        const t = size.trim().toUpperCase();
+        dbQuery = dbQuery.or(`size.eq.${t},size.ilike.*${t}*`);
     }
 
     const { data, error } = await dbQuery.limit(20);
