@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS products (
 -- Carts Table (un carrito por conversación, usa conversation_id de Laburen)
 CREATE TABLE IF NOT EXISTS carts (
     id TEXT PRIMARY KEY, -- conversation_id de Laburen/Chatwoot
+    total DECIMAL(12, 2) DEFAULT 0,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -26,5 +27,6 @@ CREATE TABLE IF NOT EXISTS cart_items (
     cart_id TEXT REFERENCES carts (id) ON DELETE CASCADE,
     product_id TEXT REFERENCES products (id),
     qty INTEGER NOT NULL CHECK (qty > 0),
+    price DECIMAL(10, 2) NOT NULL, -- Precio unitario al momento de agregar
     UNIQUE (cart_id, product_id)
 );

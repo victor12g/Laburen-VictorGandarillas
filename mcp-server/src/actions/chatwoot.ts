@@ -26,7 +26,7 @@ export async function handoverToHuman(supabase: any, args: any, env: any) {
                     method: "PATCH",
                     headers: {
                         "Content-Type": "application/json",
-                        "X-Auth-Token": apiToken,
+                        "api_access_token": apiToken,
                         "Accept": "application/json"
                     },
                     body: JSON.stringify({
@@ -53,7 +53,7 @@ export async function handoverToHuman(supabase: any, args: any, env: any) {
                         method: "POST",
                         headers: {
                             "Content-Type": "application/json",
-                            "X-Auth-Token": apiToken,
+                            "api_access_token": apiToken,
                             "Accept": "application/json"
                         },
                         body: JSON.stringify({

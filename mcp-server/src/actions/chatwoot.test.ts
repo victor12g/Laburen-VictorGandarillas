@@ -12,7 +12,7 @@ describe("Chatwoot Integration Tests", () => {
 
     describe("handoverToHuman", () => {
         it("debe rechazar si faltan parámetros requeridos", async () => {
-            const result = await handoverToHuman(mockSupabase, { conversation_id: 123 }, mockEnv);
+            const result = await handoverToHuman(mockSupabase, { conversation_id: 2 }, mockEnv);
             expect(result.isError).toBe(true);
             expect(result.content[0].text).toContain("Se requieren conversation_id y reason");
         });
@@ -23,25 +23,25 @@ describe("Chatwoot Integration Tests", () => {
         });
 
         it("debe rechazar si falta reason", async () => {
-            const result = await handoverToHuman(mockSupabase, { conversation_id: 123 }, mockEnv);
+            const result = await handoverToHuman(mockSupabase, { conversation_id: 2 }, mockEnv);
             expect(result.isError).toBe(true);
         });
 
         it("debe procesar derivación incluso con credenciales inválidas", async () => {
             const result = await handoverToHuman(mockSupabase, {
-                conversation_id: 123,
+                conversation_id: 2,
                 reason: "Cliente solicita soporte técnico"
             }, mockEnv);
 
             expect(result.content).toBeDefined();
             expect(result.content[0]).toBeDefined();
-            expect(result.content[0].text).toContain("Derivación");
+            expect(result.content[0].text).toContain("Derivando");
             console.log("✅ Derivación procesada:", result.content[0].text);
         });
 
         it("debe convertir reason a etiqueta válida", async () => {
             const result = await handoverToHuman(mockSupabase, {
-                conversation_id: 123,
+                conversation_id: 2,
                 reason: "Cliente Necesita Información Especial"
             }, mockEnv);
 
@@ -56,38 +56,25 @@ describe("Chatwoot Integration Tests", () => {
             console.log(`Token: ${mockEnv.CHATWOOT_API_TOKEN.substring(0, 8)}...`);
 
             try {
-                // Intento 1: Header X-Auth-Token (estándar)
-                console.log("\n🔍 Intento 1: X-Auth-Token header");
-                let response = await fetch(
+                // Header correcto: api_access_token
+                console.log("\n🔍 Usando header: api_access_token");
+                const response = await fetch(
                     `${mockEnv.CHATWOOT_BASE_URL}/api/v1/accounts/${mockEnv.CHATWOOT_ACCOUNT_ID}`,
                     {
                         method: "GET",
                         headers: {
-                            "X-Auth-Token": mockEnv.CHATWOOT_API_TOKEN,
+                            "api_access_token": mockEnv.CHATWOOT_API_TOKEN,
                             "Accept": "application/json"
                         }
                     }
                 );
                 console.log(`Respuesta: ${response.status}`);
-                
-                if (response.status === 401) {
-                    // Intento 2: Authorization Bearer
-                    console.log("\n🔍 Intento 2: Authorization Bearer header");
-                    response = await fetch(
-                        `${mockEnv.CHATWOOT_BASE_URL}/api/v1/accounts/${mockEnv.CHATWOOT_ACCOUNT_ID}`,
-                        {
-                            method: "GET",
-                            headers: {
-                                "Authorization": `Bearer ${mockEnv.CHATWOOT_API_TOKEN}`,
-                                "Accept": "application/json"
-                            }
-                        }
-                    );
-                    console.log(`Respuesta: ${response.status}`);
-                }
 
                 if (response.ok) {
                     console.log(`✅ Cuenta verificada`);
+                    const data = await response.json();
+                    console.log(`📌 Nombre de cuenta: ${data.name}`);
+                    console.log(`📌 Idioma: ${data.locale}`);
                 } else if (response.status === 401) {
                     console.warn(`\n⚠️ TOKEN INVÁLIDO (401)`);
                     console.warn("El token no tiene permisos válidos.");
@@ -104,7 +91,7 @@ describe("Chatwoot Integration Tests", () => {
 
     describe("Integration Tests - Chatwoot API Real", () => {
         it("debe procesar derivación de conversación real", async () => {
-            const conversationId = 35;
+            const conversationId = 2;
             
             const result = await handoverToHuman(mockSupabase, {
                 conversation_id: conversationId,

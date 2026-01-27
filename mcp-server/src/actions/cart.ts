@@ -60,10 +60,10 @@ export async function addToCart(supabase: SupabaseClient, args: CartArgs) {
         .eq("product_id", productId)
         .single();
 
-    // Obtener stock
+    // Obtener stock y precios
     const { data: product, error: pError } = await supabase
         .from("products")
-        .select("stock, name, color, size")
+        .select("stock, name, color, size, price_50_u, price_100_u, price_200_u")
         .eq("id", productId)
         .single();
 
@@ -91,7 +91,10 @@ export async function addToCart(supabase: SupabaseClient, args: CartArgs) {
     const { error: iError } = await supabase.from("cart_items").upsert({
         cart_id: finalCartId,
         product_id: productId,
-        qty: totalQty // Guardamos el gran total
+        qty: totalQty, // Guardamos el gran total
+        price: totalQty >= 200 ? product.price_200_u :
+               totalQty >= 100 ? product.price_100_u :
+               product.price_50_u
     }, { onConflict: "cart_id,product_id" });
 
     if (iError) {
@@ -99,7 +102,20 @@ export async function addToCart(supabase: SupabaseClient, args: CartArgs) {
         throw iError;
     }
 
-    return { content: [{ type: "text", text: `✅ Producto añadido. ${product.name} ${product.color}: ahora tienes ${totalQty} unidades.` }] };
+    // Recalcular total del carrito
+    const { data: allItems } = await supabase
+        .from("cart_items")
+        .select("qty, price")
+        .eq("cart_id", finalCartId);
+
+    const newTotal = (allItems || []).reduce((sum, item) => sum + (item.qty * item.price), 0);
+
+    await supabase
+        .from("carts")
+        .update({ total: newTotal, updated_at: new Date().toISOString() })
+        .eq("id", finalCartId);
+
+    return { content: [{ type: "text", text: `✅ Producto añadido. ${product.name} ${product.color}: ahora tienes ${totalQty} unidades. Total: $${newTotal}` }] };
 }
 
 export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
@@ -135,7 +151,7 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
     // 1. Verificar existencia y stock del producto
     const { data: product, error: pError } = await supabase
         .from("products")
-        .select("id, stock, name, color, size")
+        .select("id, stock, name, color, size, price_50_u, price_100_u, price_200_u")
         .eq("id", productId)
         .single();
 
@@ -149,25 +165,25 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
     // 2. Asegurar carrito
     await supabase.from("carts").upsert({ id: cartId }, { onConflict: "id" });
 
-    // 3. Consultar item actual (si existe) para saber total acumulado si estuviéramos sumando... 
-    // PERO update_cart típicamente "fija" la cantidad. 
-    // Si queremos que funcione como "agregador" inteligente (sumar):
-    // El LLM suele decir "agrega 5". Si hay 10, espera que sean 15.
-    // Si dice "quita 2", espera que sean X-2.
-    // Para simplificar, asumiremos que el LLM está enviando la cantidad FINAL deseada o la cantidad a agregar.
-    // DADO QUE eliminamos add_to_cart, lo mejor es que update_cart SIEMPRE SUME si el producto ya existe, 
-    // salvo que el LLM explícitamente diga "poner en X".
-    // PERO esto es ambiguo.
-    // MEJOR ESTRATEGIA: update_cart = FIJAR CANTIDAD (Override).
-    // Si el usuario dice "agrega 5 más", el LLM debe leer view_cart (tiene 10) -> calcular 15 -> mandar qty=15.
-    // ESTO ES LO MÁS SEGURO y evita la lógica de "suma oculta".
+    // 3. Obtener cantidad ACTUAL en carrito para validar stock correctamente
+    const { data: currentItem } = await supabase
+        .from("cart_items")
+        .select("qty")
+        .eq("cart_id", cartId)
+        .eq("product_id", productId)
+        .single();
 
-    // VALIDACIÓN DE STOCK CONTRA LA CANTIDAD SOLICITADA (qty es el target)
+    const currentQty = currentItem?.qty || 0;
+
+    // VALIDACIÓN DE STOCK: El stock "disponible real" es (stock total - lo que ya hay en carrito)
+    // Necesitamos validar que la NUEVA cantidad no supere: stock_total
     if (product.stock < qty) {
+        const availableAfterCurrent = Math.max(0, product.stock - currentQty);
+        const couldAdd = currentQty + availableAfterCurrent;
         return {
             content: [{
                 type: "text",
-                text: `⚠️ Stock insuficiente. Quieres ${qty} unidades, pero solo quedan ${product.stock} disponibles de ${product.name} ${product.color}.`
+                text: `⚠️ Stock insuficiente. Actualmente tienes ${currentQty} en carrito. El stock total disponible es ${product.stock}, así que podrías tener máximo ${couldAdd} unidades de ${product.name} ${product.color}.`
             }],
             isError: true
         };
@@ -177,7 +193,12 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
     const { error: iError } = await supabase.from("cart_items").upsert({
         cart_id: cartId,
         product_id: productId,
-        qty: qty
+        qty: qty,
+        price: product.stock < qty ? 0 : (
+            qty >= 200 ? product.price_200_u :
+            qty >= 100 ? product.price_100_u :
+            product.price_50_u
+        )
     }, { onConflict: "cart_id,product_id" });
 
     if (iError) {
@@ -185,7 +206,20 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
         throw iError;
     }
 
-    return { content: [{ type: "text", text: `✅ Carrito actualizado. ${product.name}: ${qty} unidades.` }] };
+    // 5. Recalcular y actualizar total del carrito
+    const { data: allItems } = await supabase
+        .from("cart_items")
+        .select("qty, price")
+        .eq("cart_id", cartId);
+
+    const newTotal = (allItems || []).reduce((sum, item) => sum + (item.qty * item.price), 0);
+
+    await supabase
+        .from("carts")
+        .update({ total: newTotal, updated_at: new Date().toISOString() })
+        .eq("id", cartId);
+
+    return { content: [{ type: "text", text: `✅ Carrito actualizado. ${product.name}: ${qty} unidades. Total: $${newTotal}` }] };
 }
 
 export async function clearCart(supabase: SupabaseClient, args: CartArgs) {
@@ -207,6 +241,12 @@ export async function clearCart(supabase: SupabaseClient, args: CartArgs) {
         throw error;
     }
 
+    // Resetear total a 0
+    await supabase
+        .from("carts")
+        .update({ total: 0, updated_at: new Date().toISOString() })
+        .eq("id", cartId);
+
     return { content: [{ type: "text", text: "✅ Carrito vaciado correctamente." }] };
 }
 
@@ -219,17 +259,25 @@ export async function viewCart(supabase: SupabaseClient, args: CartArgs) {
 
     console.log(`[CART] Consultando carrito: ${cartId}`);
 
+    // Obtener datos del carrito (incluyendo total)
+    const { data: cartData, error: cartError } = await supabase
+        .from("carts")
+        .select("total")
+        .eq("id", cartId)
+        .single();
+
+    if (cartError && cartError.code !== 'PGRST116') throw cartError; // PGRST116 = no rows found
+
+    // Obtener items del carrito
     const { data, error } = await supabase
         .from("cart_items")
         .select(`
             qty,
+            price,
             products (
                 name,
                 size,
-                color,
-                price_50_u,
-                price_100_u,
-                price_200_u
+                color
             )
         `)
         .eq("cart_id", cartId);
@@ -240,24 +288,15 @@ export async function viewCart(supabase: SupabaseClient, args: CartArgs) {
         return { content: [{ type: "text", text: "El carrito está vacío." }] };
     }
 
-    // Calcular totales
-    let totalGeneral = 0;
+    // Construir detalle de items
     const itemsDetalle: string[] = [];
-
     for (const item of data) {
         const p = item.products as any;
-        let unitPrice = p.price_50_u; // Precio base (mayorista mínimo)
-
-        // Aplicar escala de precios
-        if (item.qty >= 200) unitPrice = p.price_200_u;
-        else if (item.qty >= 100) unitPrice = p.price_100_u;
-
-        const subtotal = item.qty * unitPrice;
-        totalGeneral += subtotal;
-
-        itemsDetalle.push(`- ${item.qty}x ${p.name} ${p.color} (${p.size}) a $${unitPrice} = $${subtotal}`);
+        const subtotal = item.qty * item.price;
+        itemsDetalle.push(`- ${item.qty}x ${p.name} ${p.color} (${p.size}) a $${item.price}/u = $${subtotal}`);
     }
 
-    const responseText = `🛒 *CARRITO ACTUAL*:\n\n${itemsDetalle.join("\n")}\n\n💰 *TOTAL ESTIMADO: $${totalGeneral}*`;
+    const cartTotal = cartData?.total || 0;
+    const responseText = `🛒 *CARRITO ACTUAL*:\n\n${itemsDetalle.join("\n")}\n\n💰 *TOTAL: $${cartTotal}*`;
     return { content: [{ type: "text", text: responseText }] };
 }
