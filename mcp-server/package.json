@@ -1,0 +1,33 @@
+{
+  "name": "mcp-clothes-agent",
+  "version": "1.0.0",
+  "description": "MCP Server for Clothes Sales Agent with Chatwoot Integration",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src --ext .ts",
+    "build": "tsc"
+  },
+  "keywords": [
+    "mcp",
+    "clothes",
+    "sales",
+    "chatwoot",
+    "agent"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "latest",
+    "@supabase/supabase-js": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "typescript": "latest",
+    "vitest": "latest",
+    "wrangler": "latest"
+  }
+}
