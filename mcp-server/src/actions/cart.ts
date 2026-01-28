@@ -118,7 +118,7 @@ export async function addToCart(supabase: SupabaseClient, args: CartArgs) {
     return { content: [{ type: "text", text: `✅ Producto añadido. ${product.name} ${product.color}: ahora tienes ${totalQty} unidades. Total: $${newTotal}` }] };
 }
 
-export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
+export async function updateCart(supabase: SupabaseClient, args: CartArgs, env?: any) {
     const cartId = getCartId(args);
     const productId = args.product_id;
     const qty = args.qty;
@@ -234,7 +234,6 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
             product.price_50_u
         )
     }, { onConflict: "cart_id,product_id" });
-
     if (iError) {
         console.error("[CART-ERROR] update_cart:", iError.message);
         throw iError;
@@ -252,6 +251,82 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
         .from("carts")
         .update({ total: newTotal, updated_at: new Date().toISOString() })
         .eq("id", cartId);
+
+    // 6. AGREGAR LABEL A CHATWOOT (silencioso si falla)
+    if (env && currentQty === 0) {
+        // Si era nuevo, agrega label con nombre del producto
+        // Primero: asegurar que existe la conversación
+        try {
+            // Importar función helper (será exportada de chatwoot.ts)
+            // Por ahora lo hacemos inline para no complicar imports
+            
+            const { data: cartData } = await supabase
+                .from("carts")
+                .select("chatwoot_conversation_id")
+                .eq("id", cartId)
+                .single();
+
+            let conversationId = cartData?.chatwoot_conversation_id;
+
+            // Si no existe conversación, crearla
+            if (!conversationId && env.CHATWOOT_BASE_URL) {
+                try {
+                    const createResp = await fetch(
+                        `${env.CHATWOOT_BASE_URL}/api/v1/accounts/${env.CHATWOOT_ACCOUNT_ID}/conversations`,
+                        {
+                            method: "POST",
+                            headers: {
+                                "Content-Type": "application/json",
+                                "api_access_token": env.CHATWOOT_API_TOKEN
+                            },
+                            body: JSON.stringify({
+                                inbox_id: parseInt(env.CHATWOOT_INBOX_ID),
+                                contact_id: parseInt(env.CHATWOOT_CONTACT_ID),
+                                source_id: env.CHATWOOT_SOURCE_ID
+                            })
+                        }
+                    );
+
+                    if (createResp.ok) {
+                        const convData = await createResp.json();
+                        conversationId = convData.data?.id;
+
+                        // Guardar en BD
+                        if (conversationId) {
+                            await supabase
+                                .from("carts")
+                                .update({
+                                    chatwoot_conversation_id: conversationId,
+                                    updated_at: new Date().toISOString()
+                                })
+                                .eq("id", cartId);
+
+                            console.log(`[CART-LABEL] Conversación creada: ${conversationId}`);
+                        }
+                    }
+                } catch (err) {
+                    console.log("[CART-LABEL] No se pudo crear conversación:", (err as any).message);
+                }
+            }
+
+            // Ahora agregar el label (si existe conversationId)
+            if (conversationId) {
+                const label = `${product.name}`.replace(/\s+/g, "_").toLowerCase();
+                console.log(`[CART-LABEL] Agregando label "${label}" a conversación ${conversationId}`);
+
+                await fetch(`${env.CHATWOOT_BASE_URL}/api/v1/accounts/${env.CHATWOOT_ACCOUNT_ID}/conversations/${conversationId}/labels`, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "api_access_token": env.CHATWOOT_API_TOKEN
+                    },
+                    body: JSON.stringify({ labels: [label] })
+                }).catch(err => console.log(`[CART-LABEL-SILENT]`, err.message));
+            }
+        } catch (err) {
+            console.log("[CART-LABEL-SILENT] Skipping label:", (err as any).message);
+        }
+    }
 
     return { content: [{ type: "text", text: `✅ Carrito actualizado. ${product.name}: ${qty} unidades. Total: $${newTotal}` }] };
 }

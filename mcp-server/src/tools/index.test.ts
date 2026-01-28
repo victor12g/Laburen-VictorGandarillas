@@ -78,10 +78,11 @@ describe("TOOLS Schema Validation", () => {
     });
 
     describe("handover_to_human", () => {
-        it("debe requerir conversation_id y reason", () => {
+        it("debe requerir cart_id, reason e is_purchase", () => {
             const tool = TOOLS.find(t => t.name === "handover_to_human");
-            expect(tool?.inputSchema.required).toContain("conversation_id");
+            expect(tool?.inputSchema.required).toContain("cart_id");
             expect(tool?.inputSchema.required).toContain("reason");
+            expect(tool?.inputSchema.required).toContain("is_purchase");
         });
 
         it("debe tener descripción de derivación a Chatwoot", () => {

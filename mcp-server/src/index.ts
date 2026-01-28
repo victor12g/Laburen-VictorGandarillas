@@ -31,7 +31,7 @@ async function handleToolCall(name: string, args: any, supabase: any, env: Env) 
             case "create_cart":
                 return await createCart(supabase, args);
             case "update_cart":
-                return await updateCart(supabase, args);
+                return await updateCart(supabase, args, env);
             case "view_cart":
                 return await viewCart(supabase, args);
             case "clear_cart":

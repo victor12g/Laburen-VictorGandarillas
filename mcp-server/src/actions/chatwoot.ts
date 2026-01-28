@@ -1,3 +1,103 @@
+// Helper: Crear o obtener conversación en Chatwoot
+async function ensureConversationExists(supabase: any, cartId: string, env: any): Promise<number | null> {
+    try {
+        const baseUrl = env.CHATWOOT_BASE_URL;
+        const accountId = env.CHATWOOT_ACCOUNT_ID;
+        const apiToken = env.CHATWOOT_API_TOKEN;
+        const inboxId = parseInt(env.CHATWOOT_INBOX_ID);
+        const contactId = parseInt(env.CHATWOOT_CONTACT_ID);
+        const sourceId = env.CHATWOOT_SOURCE_ID;
+
+        // 1. Verificar si ya existe conversación para este carrito
+        const { data: cartData } = await supabase
+            .from("carts")
+            .select("chatwoot_conversation_id")
+            .eq("id", cartId)
+            .single();
+
+        if (cartData?.chatwoot_conversation_id) {
+            console.log(`[CHATWOOT-ENSURE] Conversación existente: ${cartData.chatwoot_conversation_id}`);
+            return cartData.chatwoot_conversation_id;
+        }
+
+        // 2. Si no existe, crear nueva conversación
+        console.log(`[CHATWOOT-ENSURE] Creando nueva conversación para carrito ${cartId}...`);
+        const createResp = await fetch(
+            `${baseUrl}/api/v1/accounts/${accountId}/conversations`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "api_access_token": apiToken,
+                    "Accept": "application/json"
+                },
+                body: JSON.stringify({
+                    inbox_id: inboxId,
+                    contact_id: contactId,
+                    source_id: sourceId
+                })
+            }
+        );
+
+        if (!createResp.ok) {
+            const error = await createResp.text();
+            console.error(`[CHATWOOT-ENSURE] Error creando conversación: ${createResp.status} - ${error}`);
+            return null;
+        }
+
+        const createData = await createResp.json();
+        const conversationId = createData.data?.id;
+
+        if (!conversationId) {
+            console.error("[CHATWOOT-ENSURE] No se devolvió conversation ID");
+            return null;
+        }
+
+        // 3. Guardar conversation ID en la tabla carts
+        await supabase
+            .from("carts")
+            .update({
+                chatwoot_conversation_id: conversationId,
+                updated_at: new Date().toISOString()
+            })
+            .eq("id", cartId);
+
+        console.log(`[CHATWOOT-ENSURE] Conversación creada y guardada: ${conversationId}`);
+        return conversationId;
+    } catch (err: any) {
+        console.error("[CHATWOOT-ENSURE-ERROR]", err.message);
+        return null;
+    }
+}
+
+// Helper: Agregar labels a una conversación en Chatwoot
+async function addLabelsToConversation(conversationId: number, labels: string[], env: any) {
+    try {
+        const baseUrl = env.CHATWOOT_BASE_URL;
+        const accountId = env.CHATWOOT_ACCOUNT_ID;
+        const apiToken = env.CHATWOOT_API_TOKEN;
+
+        const response = await fetch(`${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}/labels`, {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "api_access_token": apiToken
+            },
+            body: JSON.stringify({ labels })
+        });
+
+        if (!response.ok) {
+            const error = await response.text();
+            console.error(`[CHATWOOT-LABEL] Error al agregar labels: ${response.status} - ${error}`);
+            return;
+        }
+
+        console.log(`[CHATWOOT-LABEL] Labels agregados a conversación ${conversationId}: ${labels.join(", ")}`);
+    } catch (err: any) {
+        console.error("[CHATWOOT-LABEL-ERROR]", err.message);
+    }
+}
+
 // Helper: Limpiar reservas expiradas (> 24h)
 export async function cleanupExpiredReservations(supabase: any) {
     try {
