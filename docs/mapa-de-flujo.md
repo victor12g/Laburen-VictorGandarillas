@@ -56,7 +56,7 @@ sequenceDiagram
     Agent->>MCP: update_cart(product_id, qty: 150)
     MCP->>Supabase: INSERT INTO cart_items (+ valida stock)
     Supabase-->>MCP: Success
-    MCP->>Chatwoot: POST /conversations/{id}/labels<br/>label: "pantalón_gris"
+    MCP->>Chatwoot: POST /conversations/{id}/labels<br/>label: "094 Pantalón Gris L"
     Chatwoot-->>MCP: Label agregado ✅
     MCP-->>Agent: Success
     Agent-->>User: "✅ 150 pantalones en carrito. Total: $193.800"
@@ -84,7 +84,7 @@ sequenceDiagram
     User->>Agent: "Confirmo la compra"
     Agent->>MCP: handover_to_human(cart_id, reason: "Pago", is_purchase: true)
     MCP->>Supabase: ✓ Valida stock total disponible<br/>✓ Descuenta de inventario<br/>✓ Marca carrito como "reserved"<br/>✓ Guarda timestamp (24h expiry)
-    MCP->>Chatwoot: ✓ Abre/reutiliza conversación<br/>✓ Agrega tag "pago"<br/>✓ Agrega tag "compra_confirmada"
+    MCP->>Chatwoot: ✓ Abre/reutiliza conversación<br/>✓ Agrega tag "handover"<br/>✓ Agrega tag con motivo (consulta/compra)
     Chatwoot-->>MCP: Conversation ready
     MCP-->>Agent: Success
     Agent-->>User: "✅ Compra reservada por 24h. Un asesor se comunicará pronto."
