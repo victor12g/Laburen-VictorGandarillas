@@ -174,7 +174,7 @@ Laburen-VictorGandarillas/
 │   ├── schema.sql
 │   └── migrations/
 ├── docs/
-│   ├── flow_diagram.md
+│   ├── mapa-de-flujo.md
 │   └── products.xlsx
 ├── system_prompt_v2.md
 └── INTEGRATION_GUIDE.md

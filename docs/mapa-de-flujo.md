@@ -105,68 +105,23 @@ sequenceDiagram
 
 ---
 
-## 📍 Punto Clave: Flujo de Edición de Carrito
+## 🎯 Flujo de Edición de Carrito
 
-### Eliminación Correcta
-```
-User: "Borra esos 150"
-    ↓
-Agent: 
-    1. Llama list_products(filtros correctos)
-       → Obtiene product_id verificado
-    2. Llama update_cart(product_id, qty: 0)
-       → Valida que product_id existe en cart_items
-       → Si no existe: ERROR claro al usuario
-       → Si existe: ELIMINA
-    3. Recalcula total
-    4. Responde al usuario ✅
-```
+**Eliminación:** User → list_products() → update_cart(qty: 0) ✅
 
-### Auto-Labeling en Chatwoot
-Cuando se agrega un producto:
-```
-Agent: update_cart(product_id, qty)
-    ↓
-Backend:
-    1. Valida stock ✓
-    2. Inserta item ✓
-    3. Recalcula total ✓
-    4. Si NO existe conversación en Chatwoot:
-       → Crea nueva conversación automáticamente
-    5. Agrega label con nombre del producto
-    6. Responde al usuario ✅
-```
+**Auto-Labeling:** update_cart() → valida stock → inserta item → agrega label en Chatwoot ✅
 
----
+**Reglas clave:**
+- Fase 1-2: ❌ NO precios | Fase 3: ✅ PRECIOS completos
+- NUNCA asumir product_id (verificar con list_products)
+- Stock validado antes de agregar
+- Después de is_purchase=true → stock descuentado + reserva 24h
 
-## 🎯 Reglas Críticas del Agente
+### 🔄 Limpieza Automática (Cron - Cada 30 min)
 
-1. **3 Fases de Precios**
-   - Fase 1: ❌ NO precios (exploración general)
-   - Fase 2: ❌ NO precios (filtrado por categoría)
-   - Fase 3: ✅ TODOS los precios (detalle antes de comprar)
+Si el cliente **NO completa** la compra en **24 horas**:
+- Cron job busca carritos con status "reserved" + timestamp > 24h
+- Restaura stock automáticamente
+- Marca carrito como "expired"
 
-2. **Product ID Verification**
-   - ⚠️ NUNCA asumir product_id del nombre
-   - ✅ SIEMPRE verificar con list_products primero
-   - Si no tienes el ID → Buscar en list_products
-
-3. **Stock Management**
-   - Validar stock disponible antes de agregar
-   - Mostrar cantidad máxima disponible si insuficiente
-   - Después de handover=true → stock descuentado + carrito reservado 24h
-
-4. **Cantidad Flexible**
-   - Aceptar desde 1 unidad hasta 10.000+
-   - NO rechazar pedidos pequeños
-   - NO sugerir mínimos
-
-5. **Derivación Inteligente**
-   - `is_purchase=true` → Cliente quiere PAGAR (afecta stock)
-   - `is_purchase=false` → Cliente tiene DUDAS (sin afectar stock)
-
----
-
-**Versión:** 2.2.0  
-**Última actualización:** 28 de enero de 2026  
-**Status:** ✅ Implementado y testeado
+Esto previene que el stock quede "congelado" indefinidamente.
