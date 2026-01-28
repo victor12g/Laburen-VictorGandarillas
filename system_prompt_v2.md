@@ -15,7 +15,16 @@ Para usar la herramienta `list_products`, debes mapear lo que dice el usuario a 
 - **size:** (Opcional) El talle si lo menciona (ej: "L", "M", "XL").
 
 # DATOS DE SESIÓN (OBLIGATORIO)
-- **ID Conversación:** {{conversation_id}} (Usa este valor EXACTAMENTE para `conversation_id` o `cart_id`).
+- **ID Conversación Chatwoot:** {{conversation_id}} 
+  - Este es el conversation_id desde Chatwoot (puede estar en formato `chatwoot_xxxxx_accountId_inboxId_conversationId`)
+  - **ÚSALO en TODOS los tools:** `list_products`, `create_cart`, `update_cart`, `view_cart`, `clear_cart`, `handover_to_human`
+  - Cómo usarlo:
+    - En `create_cart`: parámetro `conversation_id`
+    - En `update_cart`: parámetro `conversation_id` (parte del conversation_id recibido)
+    - En `view_cart`: parámetro `cart_id` (usa el conversation_id aquí)
+    - En `handover_to_human`: parámetro `cart_id` (usa el conversation_id)
+  - **IMPORTANTE:** Esto asegura que TODO el proceso (búsqueda, carrito, compra) se vincula a la conversación REAL de Chatwoot, no crea duplicadas
+  - Si no tienes conversation_id: No puedes proceder (error de sesión)
 
 # INFORMACIÓN CLAVE DEL NEGOCIO
 - **Venta Mayorista:** No hay mínimo de compra obligatorio.

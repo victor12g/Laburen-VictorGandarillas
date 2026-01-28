@@ -1,5 +1,5 @@
 // Helper: Crear o obtener conversación en Chatwoot
-async function ensureConversationExists(supabase: any, cartId: string, env: any): Promise<number | null> {
+export async function ensureConversationExists(supabase: any, cartId: string, env: any): Promise<number | null> {
     try {
         const baseUrl = env.CHATWOOT_BASE_URL;
         const accountId = env.CHATWOOT_ACCOUNT_ID;
@@ -8,7 +8,56 @@ async function ensureConversationExists(supabase: any, cartId: string, env: any)
         const contactId = parseInt(env.CHATWOOT_CONTACT_ID);
         const sourceId = env.CHATWOOT_SOURCE_ID;
 
-        // 1. Verificar si ya existe conversación para este carrito
+        let realConversationId: number | null = null;
+
+        // 0. Extraer ID real de Chatwoot en múltiples formatos:
+        // Formato 1: "chatwoot_xxxxx_accountId_inboxId_conversationId" → extrae conversationId
+        const chatwootMatch = cartId.match(/_(\d+)_(\d+)_(\d+)$/);
+        if (chatwootMatch) {
+            const [, , , conversationIdStr] = chatwootMatch;
+            realConversationId = parseInt(conversationIdStr);
+            console.log(`[CHATWOOT-ENSURE] Formato Chatwoot completo detectado → conversation ID: ${realConversationId}`);
+        }
+        
+        // Formato 2: Solo número "14" → úsalo directo
+        if (!realConversationId && /^\d+$/.test(cartId)) {
+            realConversationId = parseInt(cartId);
+            console.log(`[CHATWOOT-ENSURE] Formato número detectado → conversation ID: ${realConversationId}`);
+        }
+
+        // Si extrajimos un ID válido, verificarlo en Chatwoot
+        if (realConversationId) {
+            console.log(`[CHATWOOT-ENSURE] Verificando conversación ${realConversationId} en Chatwoot...`);
+            const verifyResp = await fetch(
+                `${baseUrl}/api/v1/accounts/${accountId}/conversations/${realConversationId}`,
+                {
+                    method: "GET",
+                    headers: {
+                        "api_access_token": apiToken,
+                        "Accept": "application/json"
+                    }
+                }
+            );
+            
+            if (verifyResp.ok) {
+                console.log(`[CHATWOOT-ENSURE] Conversación Chatwoot verificada: ${realConversationId}`);
+                // Guardar en DB para futuras referencias
+                await supabase
+                    .from("carts")
+                    .update({
+                        chatwoot_conversation_id: realConversationId,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq("id", cartId)
+                    .then(() => console.log(`[CHATWOOT-ENSURE] Conversation ID ${realConversationId} guardado en DB`));
+                return realConversationId;
+            } else {
+                console.warn(`[CHATWOOT-ENSURE] Conversación ${realConversationId} no válida o no accesible`);
+                realConversationId = null;
+            }
+        }
+
+        // 1. Fallback: Verificar si ya existe conversación para este carrito en DB
         const { data: cartData } = await supabase
             .from("carts")
             .select("chatwoot_conversation_id")
@@ -16,11 +65,18 @@ async function ensureConversationExists(supabase: any, cartId: string, env: any)
             .single();
 
         if (cartData?.chatwoot_conversation_id) {
-            console.log(`[CHATWOOT-ENSURE] Conversación existente: ${cartData.chatwoot_conversation_id}`);
+            console.log(`[CHATWOOT-ENSURE] Conversación existente en DB: ${cartData.chatwoot_conversation_id}`);
             return cartData.chatwoot_conversation_id;
         }
 
-        // 2. Si no existe, crear nueva conversación
+        // 2. Si no existe conversación, verificar si está habilitado el fallback
+        const createFallback = env.CREATE_CONVERSATION_FALLBACK === 'true';
+        if (!createFallback) {
+            console.warn(`[CHATWOOT-ENSURE] No se encontró conversación y CREATE_CONVERSATION_FALLBACK está deshabilitado`);
+            return null;
+        }
+
+        // 3. Crear nueva conversación (solo si fallback está habilitado)
         console.log(`[CHATWOOT-ENSURE] Creando nueva conversación para carrito ${cartId}...`);
         const createResp = await fetch(
             `${baseUrl}/api/v1/accounts/${accountId}/conversations`,
@@ -53,7 +109,7 @@ async function ensureConversationExists(supabase: any, cartId: string, env: any)
             return null;
         }
 
-        // 3. Guardar conversation ID en la tabla carts
+        // 4. Guardar conversation ID en la tabla carts
         await supabase
             .from("carts")
             .update({
@@ -71,28 +127,57 @@ async function ensureConversationExists(supabase: any, cartId: string, env: any)
 }
 
 // Helper: Agregar labels a una conversación en Chatwoot
-async function addLabelsToConversation(conversationId: number, labels: string[], env: any) {
+// Helper: Agregar labels a una conversación SIN borrar las existentes
+export async function addLabelsToConversation(conversationId: number, newLabels: string[], env: any) {
     try {
         const baseUrl = env.CHATWOOT_BASE_URL;
         const accountId = env.CHATWOOT_ACCOUNT_ID;
         const apiToken = env.CHATWOOT_API_TOKEN;
 
-        const response = await fetch(`${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}/labels`, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "api_access_token": apiToken
-            },
-            body: JSON.stringify({ labels })
-        });
+        // 1. Obtener las etiquetas EXISTENTES de la conversación
+        const getResponse = await fetch(
+            `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}`,
+            {
+                method: "GET",
+                headers: {
+                    "api_access_token": apiToken,
+                    "Accept": "application/json"
+                }
+            }
+        );
 
-        if (!response.ok) {
-            const error = await response.text();
-            console.error(`[CHATWOOT-LABEL] Error al agregar labels: ${response.status} - ${error}`);
+        if (!getResponse.ok) {
+            console.warn(`[CHATWOOT-LABEL] No se pudieron obtener etiquetas existentes, agregando solo las nuevas`);
+        }
+
+        const convData = await getResponse.json();
+        const existingLabels = convData.data?.labels || [];
+        console.log(`[CHATWOOT-LABEL] Etiquetas existentes: ${existingLabels.join(", ")}`);
+
+        // 2. Combinar etiquetas (viejas + nuevas, sin duplicados)
+        const allLabels = [...new Set([...existingLabels, ...newLabels])];
+        console.log(`[CHATWOOT-LABEL] Etiquetas combinadas: ${allLabels.join(", ")}`);
+
+        // 3. POST con TODAS las etiquetas
+        const postResponse = await fetch(
+            `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}/labels`,
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "api_access_token": apiToken
+                },
+                body: JSON.stringify({ labels: allLabels })
+            }
+        );
+
+        if (!postResponse.ok) {
+            const error = await postResponse.text();
+            console.error(`[CHATWOOT-LABEL] Error al agregar labels: ${postResponse.status} - ${error}`);
             return;
         }
 
-        console.log(`[CHATWOOT-LABEL] Labels agregados a conversación ${conversationId}: ${labels.join(", ")}`);
+        console.log(`[CHATWOOT-LABEL] Labels agregados correctamente: ${allLabels.join(", ")}`);
     } catch (err: any) {
         console.error("[CHATWOOT-LABEL-ERROR]", err.message);
     }
@@ -180,63 +265,22 @@ export async function handoverToHuman(supabase: any, args: any, env: any) {
         const baseUrl = env.CHATWOOT_BASE_URL;
         const accountId = env.CHATWOOT_ACCOUNT_ID;
         const apiToken = env.CHATWOOT_API_TOKEN;
-        const inboxId = parseInt(env.CHATWOOT_INBOX_ID);
-        const contactId = parseInt(env.CHATWOOT_CONTACT_ID);
-        const sourceId = env.CHATWOOT_SOURCE_ID;
 
         console.log(`[CHATWOOT] Iniciando derivación para carrito: ${cart_id}`);
-        console.log(`[CHATWOOT] Inbox: ${inboxId}, Contact: ${contactId}`);
 
-        let conversationId: number;
+        // 1. Usar ensureConversationExists para extraer/verificar/crear conversation ID
+        const conversationId = await ensureConversationExists(supabase, cart_id, env);
 
-        // 1. Verificar si ya existe conversación para este carrito
-        const { data: cartData } = await supabase
-            .from("carts")
-            .select("chatwoot_conversation_id")
-            .eq("id", cart_id)
-            .single();
-
-        if (cartData?.chatwoot_conversation_id) {
-            conversationId = cartData.chatwoot_conversation_id;
-            console.log(`[CHATWOOT] Usando conversación existente: ${conversationId}`);
-        } else {
-            // 2. Crear nueva conversación en Chatwoot
-            console.log(`[CHATWOOT] Creando nueva conversación...`);
-            const createResp = await fetch(
-                `${baseUrl}/api/v1/accounts/${accountId}/conversations`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "api_access_token": apiToken,
-                        "Accept": "application/json"
-                    },
-                    body: JSON.stringify({
-                        inbox_id: inboxId,
-                        contact_id: contactId,
-                        source_id: sourceId
-                    })
-                }
-            );
-
-            if (!createResp.ok) {
-                const errorText = await createResp.text();
-                console.error(`[CHATWOOT] Error creando conversación:`, errorText);
-                throw new Error(`Error creando conversación: ${createResp.status}`);
-            }
-
-            const createData = await createResp.json();
-            conversationId = createData.id;
-            console.log(`[CHATWOOT] Conversación creada: ${conversationId}`);
-
-            // Guardar en BD
-            await supabase
-                .from("carts")
-                .update({ chatwoot_conversation_id: conversationId })
-                .eq("id", cart_id);
+        if (!conversationId) {
+            return {
+                content: [{ type: "text", text: "Error: No se pudo obtener conversación en Chatwoot" }],
+                isError: true
+            };
         }
 
-        // 3. Cambiar estado de la conversación a "open"
+        console.log(`[CHATWOOT] Conversation ID asegurado: ${conversationId}`);
+
+        // 2. Cambiar estado de la conversación a "open"
         const statusResponse = await fetch(
             `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}`,
             {
@@ -260,26 +304,9 @@ export async function handoverToHuman(supabase: any, args: any, env: any) {
 
         console.log(`[CHATWOOT] Conversación ${conversationId} abierta`);
 
-        // 4. Agregar etiquetas (opcional)
+        // 4. Agregar etiquetas (SIN borrar las existentes)
         try {
-            const labelsResponse = await fetch(
-                `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}/labels`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "api_access_token": apiToken,
-                        "Accept": "application/json"
-                    },
-                    body: JSON.stringify({
-                        labels: ["handover", reason.toLowerCase().replace(/\s+/g, "_")]
-                    })
-                }
-            );
-
-            if (labelsResponse.ok) {
-                console.log(`[CHATWOOT] Etiquetas agregadas`);
-            }
+            await addLabelsToConversation(conversationId, ["handover", reason.toLowerCase().replace(/\s+/g, "_")], env);
         } catch (labelErr) {
             console.warn(`[CHATWOOT] Advertencia al agregar etiquetas (no crítico)`);
         }
@@ -403,14 +430,37 @@ export async function handoverForPurchase(supabase: any, args: any, env: any) {
 
         console.log(`[HANDOVER-PURCHASE] Carrito ${cart_id} marcado como reservado`);
 
-        // 6. DERIVAR A HUMANO PARA PROCESAR PAGO
-        const labelReason = `PAGO: ${reason}`.replace(/\s+/g, "_").toLowerCase();
+        // 6. CREAR ETIQUETAS DE COMPRA CON DETALLES DE CADA PRODUCTO
+        // Construir resumen de compra: "compra 200u 094 pantalon gris xl + 100u 2gfzzqze remera azul l"
+        let purchaseSummary = "compra ";
+        const productLabels = [];
+        
+        for (let i = 0; i < cartItems.length; i++) {
+            const item = cartItems[i];
+            const { data: product } = await supabase
+                .from("products")
+                .select("id, name, color, size")
+                .eq("id", item.product_id)
+                .single();
+            
+            if (product) {
+                const productLabel = `${item.qty}u ${product.id} ${product.name} ${product.color} ${product.size}`
+                    .toLowerCase();
+                productLabels.push(productLabel);
+                purchaseSummary += productLabel;
+                if (i < cartItems.length - 1) {
+                    purchaseSummary += " + ";
+                }
+            }
+        }
+
+        // 7. DERIVAR A HUMANO PARA PROCESAR PAGO CON ETIQUETAS DETALLADAS
         const handoverResult = await handoverToHuman(supabase, {
             cart_id,
-            reason: labelReason
+            reason: purchaseSummary
         }, env);
 
-        // 7. RESPUESTA FINAL
+        // 8. RESPUESTA FINAL
         return {
             content: [{
                 type: "text",
