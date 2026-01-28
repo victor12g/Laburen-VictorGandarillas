@@ -3,12 +3,12 @@ import { handoverToHuman } from "../../src/actions/chatwoot.js";
 
 describe("Chatwoot Integration Tests", () => {
     const mockEnv = {
-        CHATWOOT_BASE_URL: "https://chatwootchallenge.laburen.com",
-        CHATWOOT_ACCOUNT_ID: "44",
-        CHATWOOT_API_TOKEN: "bffQ4etC59X39B3n73Eqtksu",
-        CHATWOOT_INBOX_ID: "50",
-        CHATWOOT_CONTACT_ID: "54",
-        CHATWOOT_SOURCE_ID: "whatsapp:+542215232385"
+        CHATWOOT_BASE_URL: process.env.CHATWOOT_BASE_URL || "https://chatwootchallenge.laburen.com",
+        CHATWOOT_ACCOUNT_ID: process.env.CHATWOOT_ACCOUNT_ID || "44",
+        CHATWOOT_API_TOKEN: process.env.CHATWOOT_API_TOKEN || "",
+        CHATWOOT_INBOX_ID: process.env.CHATWOOT_INBOX_ID || "50",
+        CHATWOOT_CONTACT_ID: process.env.CHATWOOT_CONTACT_ID || "54",
+        CHATWOOT_SOURCE_ID: process.env.CHATWOOT_SOURCE_ID || "whatsapp:+542215232385"
     };
 
     const mockSupabase = null;
