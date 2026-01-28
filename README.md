@@ -201,4 +201,4 @@ Laburen-VictorGandarillas/
 
 ## 📄 Licencia
 
-MIT - Proyecto challenge Laburen.com
+MIT - Laburen.com AI Sales Agent

@@ -1,4 +1,4 @@
--- Products Table (Campos según Challenge 2.2, manteniendo datos del Excel)
+-- Products Table
 CREATE TABLE IF NOT EXISTS products (
     id TEXT PRIMARY KEY,
     name TEXT,
@@ -13,9 +13,9 @@ CREATE TABLE IF NOT EXISTS products (
     price_200_u DECIMAL(10, 2)
 );
 
--- Carts Table (un carrito por conversación, usa conversation_id de Laburen)
+-- Carts Table - One cart per conversation
 CREATE TABLE IF NOT EXISTS carts (
-    id TEXT PRIMARY KEY, -- conversation_id de Laburen/Chatwoot
+    id TEXT PRIMARY KEY,
     chatwoot_conversation_id INTEGER,
     total DECIMAL(12, 2) DEFAULT 0,
     status TEXT DEFAULT 'active', -- 'active', 'reserved', 'abandoned', 'completed'

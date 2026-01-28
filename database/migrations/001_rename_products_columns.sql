@@ -1,8 +1,7 @@
--- Migración: Renombrar columnas de products a estándares del Challenge
--- Fecha: 2026-01-26
--- IMPORTANTE: Esta migración preserva todos los datos existentes
+-- Rename products table columns to standard naming conventions
+-- Preserves all existing data
 
--- Mapeo de columnas:
+-- Column mapping:
 -- ID → id
 -- TIPO_PRENDA → name
 -- TALLA → size
