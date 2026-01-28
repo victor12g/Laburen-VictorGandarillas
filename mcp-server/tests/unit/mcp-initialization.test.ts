@@ -1,24 +1,24 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Mock de las dependencias
-vi.mock("./tools/index.js", () => ({
+vi.mock("../../src/tools/index.js", () => ({
     TOOLS: [
         { name: "test_tool", description: "Test", inputSchema: { type: "object" } }
     ]
 }));
 
-vi.mock("./actions/products.js", () => ({
+vi.mock("../../src/actions/products.js", () => ({
     listProducts: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "Products" }] })
 }));
 
-vi.mock("./actions/cart.js", () => ({
+vi.mock("../../src/actions/cart.js", () => ({
     createCart: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "Cart created" }] }),
     updateCart: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "Cart updated" }] }),
     clearCart: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "Cart cleared" }] }),
     viewCart: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "Cart view" }] })
 }));
 
-vi.mock("./actions/chatwoot.js", () => ({
+vi.mock("../../src/actions/chatwoot.js", () => ({
     handoverToHuman: vi.fn().mockResolvedValue({ content: [{ type: "text", text: "Handover" }] })
 }));
 

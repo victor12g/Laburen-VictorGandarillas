@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { TOOLS } from "./index.js";
+import { TOOLS } from "../../src/tools/index.js";
 
 describe("TOOLS Schema Validation", () => {
     it("debe exportar un array de herramientas", () => {

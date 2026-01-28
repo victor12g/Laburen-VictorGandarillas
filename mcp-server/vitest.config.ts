@@ -9,11 +9,11 @@ export default defineConfig({
             reporter: ["text", "json", "html"],
             exclude: [
                 "node_modules/",
-                "src/**/*.test.ts",
+                "tests/**/*.test.ts",
                 "dist/"
             ]
         },
-        include: ["src/**/*.test.ts"],
+        include: ["tests/**/*.test.ts"],
         testTimeout: 10000
     }
 });
