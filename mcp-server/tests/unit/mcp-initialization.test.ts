@@ -35,7 +35,7 @@ describe("MCP Server - Index", () => {
         SUPABASE_URL: "https://test.supabase.co",
         SUPABASE_ANON_KEY: "test_key",
         CHATWOOT_BASE_URL: "https://chatwoot.test",
-        CHATWOOT_ACCOUNT_ID: "44",
+        CHATWOOT_ACCOUNT_ID: "12345",
         CHATWOOT_API_TOKEN: "test_token"
     };
 
