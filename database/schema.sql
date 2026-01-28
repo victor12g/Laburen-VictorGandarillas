@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS carts (
     id TEXT PRIMARY KEY, -- conversation_id de Laburen/Chatwoot
     chatwoot_conversation_id INTEGER,
     total DECIMAL(12, 2) DEFAULT 0,
+    status TEXT DEFAULT 'active', -- 'active', 'reserved', 'abandoned', 'completed'
+    reserved_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

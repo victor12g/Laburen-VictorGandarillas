@@ -9,7 +9,7 @@ import {
     clearCart,
     viewCart
 } from "./actions/cart.js";
-import { handoverToHuman } from "./actions/chatwoot.js";
+import { handoverToHuman, handoverForPurchase, cleanupExpiredReservations } from "./actions/chatwoot.js";
 
 // --- CONFIGURACIÓN ---
 interface Env {
@@ -37,7 +37,12 @@ async function handleToolCall(name: string, args: any, supabase: any, env: Env) 
             case "clear_cart":
                 return await clearCart(supabase, args);
             case "handover_to_human":
-                return await handoverToHuman(supabase, args, env);
+                // Herramienta unificada: routea según is_purchase
+                if (args.is_purchase === true) {
+                    return await handoverForPurchase(supabase, args, env);
+                } else {
+                    return await handoverToHuman(supabase, args, env);
+                }
             default:
                 return { content: [{ type: "text", text: "Herramienta no encontrada" }], isError: true };
         }
@@ -156,5 +161,13 @@ export default {
         });
 
         return new Response("Not found", { status: 404 });
+    },
+    
+    // --- SCHEDULED HANDLER PARA CRON ---
+    async scheduled(event: any, env: Env): Promise<void> {
+        console.log("[CRON] Ejecutando limpieza de reservas expiradas");
+        const supabase = createClient(env.SUPABASE_URL, env.SUPABASE_ANON_KEY);
+        await cleanupExpiredReservations(supabase);
+        console.log("[CRON] Limpieza completada");
     }
 };

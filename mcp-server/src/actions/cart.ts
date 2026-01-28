@@ -133,6 +133,26 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
 
     // --- ELIMINAR ---
     if (qty <= 0) {
+        // Primero verificar que el producto existe en el carrito con ese exact product_id
+        const { data: existingItem, error: checkError } = await supabase
+            .from("cart_items")
+            .select("product_id, qty")
+            .eq("cart_id", cartId)
+            .eq("product_id", productId)
+            .single();
+
+        if (checkError || !existingItem) {
+            console.error(`[CART-ERROR] remove_item: Product ID "${productId}" not found in cart ${cartId}`);
+            return {
+                content: [{
+                    type: "text",
+                    text: `❌ No encontré un producto con ID "${productId}" en tu carrito. Esto puede ocurrir si el ID es incorrecto. Por favor, verifica con list_products cuál es el ID exacto del producto que deseas eliminar.`
+                }],
+                isError: true
+            };
+        }
+
+        // Ahora eliminar
         const { error } = await supabase
             .from("cart_items")
             .delete()
@@ -140,9 +160,23 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs) {
             .eq("product_id", productId);
 
         if (error) {
-            console.error("[CART-ERROR] remove_item:", error.message);
+            console.error("[CART-ERROR] remove_item (delete):", error.message);
             throw error;
         }
+
+        // Recalcular total del carrito
+        const { data: allItems } = await supabase
+            .from("cart_items")
+            .select("qty, price")
+            .eq("cart_id", cartId);
+
+        const newTotal = (allItems || []).reduce((sum, item) => sum + (item.qty * item.price), 0);
+
+        await supabase
+            .from("carts")
+            .update({ total: newTotal, updated_at: new Date().toISOString() })
+            .eq("id", cartId);
+
         return { content: [{ type: "text", text: "✅ Producto eliminado del carrito." }] };
     }
 

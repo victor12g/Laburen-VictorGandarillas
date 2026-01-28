@@ -61,14 +61,15 @@ export const TOOLS = [
     },
     {
         name: "handover_to_human",
-        description: "Deriva la conversación a un agente humano en Chatwoot. Crea conversación si no existe, abre la conversación y agrega etiquetas.",
+        description: "Derivación a Chatwoot. Usa is_purchase=true para COMPRAS CONFIRMADAS (descuenta stock, reserva 24h, procesa pago). Usa is_purchase=false para DUDAS/CAMBIOS/INFO (sin afectar stock).",
         inputSchema: {
             type: "object",
             properties: {
-                cart_id: { type: "string", description: "ID del carrito (conversación local)" },
-                reason: { type: "string", description: "Motivo de la derivación" }
+                cart_id: { type: "string", description: "ID del carrito" },
+                reason: { type: "string", description: "Resumen de la transacción o motivo" },
+                is_purchase: { type: "boolean", description: "true = Compra confirmada lista para pagar. false = Consulta/cambios/información sin comprar" }
             },
-            required: ["cart_id", "reason"]
+            required: ["cart_id", "reason", "is_purchase"]
         }
     }
 ];

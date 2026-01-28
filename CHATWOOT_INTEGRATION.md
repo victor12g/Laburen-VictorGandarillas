@@ -71,6 +71,9 @@ await handoverToHuman(supabase, {
 CHATWOOT_BASE_URL=https://chatwootchallenge.laburen.com
 CHATWOOT_ACCOUNT_ID=44
 CHATWOOT_API_TOKEN=bffQ4etC59X39B3n73Eqtksu
+CHATWOOT_INBOX_ID=50
+CHATWOOT_CONTACT_ID=54
+CHATWOOT_SOURCE_ID=whatsapp:+542215232385
 ```
 
 ---
