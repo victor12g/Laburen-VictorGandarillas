@@ -174,8 +174,17 @@ Laburen-VictorGandarillas/
 │   ├── schema.sql
 │   └── migrations/
 ├── docs/
-│   ├── mapa-de-flujo.md
-│   └── products.xlsx
+│   ├── mapa-de-flujo.md           # 📊 Diagrama de flujo (Fase Conceptual)
+│   ├── system-prompt.md           # 🤖 System Prompt para el agente
+│   ├── deployment-status.md       # 🚀 Estado de infraestructura
+│   └── products.xlsx              # 📦 Catálogo de productos
+├── tests/
+│   ├── TEST_SUMMARY.md            # 🧪 Resumen de tests
+│   └── unit/
+│       ├── mcp-initialization.test.ts
+│       ├── tools-schema.test.ts
+│       ├── chatwoot-integration.test.ts
+│       └── product-search.test.ts
 ├── system_prompt_v2.md
 └── INTEGRATION_GUIDE.md
 ```

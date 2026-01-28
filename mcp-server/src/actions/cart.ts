@@ -1,4 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
+import { ensureConversationExists } from "./chatwoot.js";
 
 interface CartArgs {
     cart_id?: string;
@@ -6,6 +7,85 @@ interface CartArgs {
     product_id?: string;
     qty?: number;
 }
+
+// ============ SECURITY VALIDATORS ============
+
+/**
+ * Validates that quantity is a positive integer (no decimals)
+ * @returns { isValid: boolean, error?: string }
+ */
+export function validateQuantity(qty: any): { isValid: boolean; error?: string } {
+    if (qty === undefined || qty === null) {
+        return { isValid: false, error: "La cantidad es requerida." };
+    }
+
+    // Check if it's an integer
+    if (!Number.isInteger(qty)) {
+        return { 
+            isValid: false, 
+            error: "La cantidad debe ser un número entero (ej: 5, no 1,5). Los pantalones se venden por unidades completas." 
+        };
+    }
+
+    // Check if it's positive
+    if (qty <= 0) {
+        return { isValid: false, error: "La cantidad debe ser mayor a 0." };
+    }
+
+    return { isValid: true };
+}
+
+/**
+ * Sanitize and validate ID formats to prevent SQL injection
+ * @returns { isValid: boolean, error?: string }
+ */
+export function validateId(id: any, idType: string = "ID"): { isValid: boolean; error?: string } {
+    if (!id || typeof id !== "string") {
+        return { isValid: false, error: `${idType} inválido.` };
+    }
+
+    if (id.trim().length === 0) {
+        return { isValid: false, error: `${idType} no puede estar vacío.` };
+    }
+
+    // Allow alphanumeric, hyphens, and underscores (safe for IDs)
+    const safeIdRegex = /^[\d\w-]+$/;
+    if (!safeIdRegex.test(id)) {
+        return { 
+            isValid: false, 
+            error: `${idType} contiene caracteres no permitidos. Intenta nuevamente.` 
+        };
+    }
+
+    return { isValid: true };
+}
+
+/**
+ * Sanitize reason/text input to prevent XSS
+ * @returns { isValid: boolean, sanitized: string, error?: string }
+ */
+export function sanitizeText(text: any): { isValid: boolean; sanitized: string; error?: string } {
+    if (!text || typeof text !== "string") {
+        return { isValid: false, sanitized: "", error: "Texto inválido." };
+    }
+
+    // Remove potentially dangerous characters/sequences
+    const sanitized = text
+        .replace(/[<>\"';]/g, "") // Remove HTML/SQL special chars
+        .trim();
+
+    if (sanitized.length === 0) {
+        return { isValid: false, sanitized: "", error: "El texto no puede estar vacío." };
+    }
+
+    if (sanitized.length > 500) {
+        return { isValid: false, sanitized: "", error: "El texto es muy largo (máximo 500 caracteres)." };
+    }
+
+    return { isValid: true, sanitized };
+}
+
+// ============ HELPERS ============
 
 // Helper para obtener ID de cart limpio
 function getCartId(args: CartArgs): string | undefined {
@@ -37,22 +117,38 @@ export async function addToCart(supabase: SupabaseClient, args: CartArgs) {
     const productId = args.product_id;
     const qty = args.qty;
 
-    if (!productId || qty === undefined || qty <= 0) {
-        return { content: [{ type: "text", text: "Error: necesito product_id y qty positivo." }], isError: true };
+    // ✅ VALIDATE QUANTITY
+    const qtyValidation = validateQuantity(qty);
+    if (!qtyValidation.isValid) {
+        return { content: [{ type: "text", text: `Error: ${qtyValidation.error}` }], isError: true };
     }
 
+    // ✅ VALIDATE PRODUCT ID
+    if (!productId) {
+        return { content: [{ type: "text", text: "Error: product_id es requerido." }], isError: true };
+    }
+    const productIdValidation = validateId(productId, "product_id");
+    if (!productIdValidation.isValid) {
+        return { content: [{ type: "text", text: `Error: ${productIdValidation.error}` }], isError: true };
+    }
+
+    // ✅ VALIDATE CART ID (REQUIRED)
     if (!cartId) {
-        const newCartId = crypto.randomUUID();
-        // Asegurar que el carrito existe
-        const { error: cError } = await supabase.from("carts").upsert({ id: newCartId }, { onConflict: "id" });
-        if (cError) {
-            console.error("[CART-ERROR] add_to_cart (upsert cart):", cError.message);
-            throw cError;
-        }
+        return { 
+            content: [{ 
+                type: "text", 
+                text: "Error: cart_id o conversation_id es requerido. Por favor, consulta el carrito actual primero o proporciona un identificador válido." 
+            }], 
+            isError: true 
+        };
+    }
+    const cartIdValidation = validateId(cartId, "cart_id");
+    if (!cartIdValidation.isValid) {
+        return { content: [{ type: "text", text: `Error: ${cartIdValidation.error}` }], isError: true };
     }
 
     // Consultar cantidad actual en el carrito
-    const finalCartId = cartId || crypto.randomUUID();
+    const finalCartId = cartId;
     const { data: currentItem } = await supabase
         .from("cart_items")
         .select("qty")
@@ -129,6 +225,23 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs, env?:
 
     if (!cartId) {
         return { content: [{ type: "text", text: "Error: necesito cart_id o conversation_id." }], isError: true };
+    }
+
+    // VALIDAR QUE EL CARRITO NO ESTÉ RESERVADO
+    const { data: cartData } = await supabase
+        .from("carts")
+        .select("status")
+        .eq("id", cartId)
+        .single();
+
+    if (cartData?.status === "reserved") {
+        return {
+            content: [{
+                type: "text",
+                text: "⏳ Tu carrito está en proceso de compra y fue derivado a un agente humano. Por favor espera a que se comunique contigo para finalizar los detalles."
+            }],
+            isError: true
+        };
     }
 
     // --- ELIMINAR ---
@@ -252,66 +365,13 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs, env?:
         .update({ total: newTotal, updated_at: new Date().toISOString() })
         .eq("id", cartId);
 
-    // 6. AGREGAR LABEL A CHATWOOT (silencioso si falla)
+    // 6. AGREGAR LABEL A CHATWOOT (solo si es primer item)
     if (env && currentQty === 0) {
-        // Si era nuevo, agrega label con nombre del producto
-        // Primero: asegurar que existe la conversación
         try {
-            // Importar función helper (será exportada de chatwoot.ts)
-            // Por ahora lo hacemos inline para no complicar imports
+            const conversationId = await ensureConversationExists(supabase, cartId, env);
             
-            const { data: cartData } = await supabase
-                .from("carts")
-                .select("chatwoot_conversation_id")
-                .eq("id", cartId)
-                .single();
-
-            let conversationId = cartData?.chatwoot_conversation_id;
-
-            // Si no existe conversación, crearla
-            if (!conversationId && env.CHATWOOT_BASE_URL) {
-                try {
-                    const createResp = await fetch(
-                        `${env.CHATWOOT_BASE_URL}/api/v1/accounts/${env.CHATWOOT_ACCOUNT_ID}/conversations`,
-                        {
-                            method: "POST",
-                            headers: {
-                                "Content-Type": "application/json",
-                                "api_access_token": env.CHATWOOT_API_TOKEN
-                            },
-                            body: JSON.stringify({
-                                inbox_id: parseInt(env.CHATWOOT_INBOX_ID),
-                                contact_id: parseInt(env.CHATWOOT_CONTACT_ID),
-                                source_id: env.CHATWOOT_SOURCE_ID
-                            })
-                        }
-                    );
-
-                    if (createResp.ok) {
-                        const convData = await createResp.json();
-                        conversationId = convData.data?.id;
-
-                        // Guardar en BD
-                        if (conversationId) {
-                            await supabase
-                                .from("carts")
-                                .update({
-                                    chatwoot_conversation_id: conversationId,
-                                    updated_at: new Date().toISOString()
-                                })
-                                .eq("id", cartId);
-
-                            console.log(`[CART-LABEL] Conversación creada: ${conversationId}`);
-                        }
-                    }
-                } catch (err) {
-                    console.log("[CART-LABEL] No se pudo crear conversación:", (err as any).message);
-                }
-            }
-
-            // Ahora agregar el label (si existe conversationId)
             if (conversationId) {
-                const label = `${product.name}`.replace(/\s+/g, "_").toLowerCase();
+                const label = `${product.id} ${product.name} ${product.color} ${product.size}`;
                 console.log(`[CART-LABEL] Agregando label "${label}" a conversación ${conversationId}`);
 
                 await fetch(`${env.CHATWOOT_BASE_URL}/api/v1/accounts/${env.CHATWOOT_ACCOUNT_ID}/conversations/${conversationId}/labels`, {
@@ -321,7 +381,7 @@ export async function updateCart(supabase: SupabaseClient, args: CartArgs, env?:
                         "api_access_token": env.CHATWOOT_API_TOKEN
                     },
                     body: JSON.stringify({ labels: [label] })
-                }).catch(err => console.log(`[CART-LABEL-SILENT]`, err.message));
+                }).catch(err => console.log(`[CART-LABEL-ERROR]`, err.message));
             }
         } catch (err) {
             console.log("[CART-LABEL-SILENT] Skipping label:", (err as any).message);

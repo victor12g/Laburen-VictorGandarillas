@@ -1,5 +1,5 @@
 // Helper: Crear o obtener conversación en Chatwoot
-async function ensureConversationExists(supabase: any, cartId: string, env: any): Promise<number | null> {
+export async function ensureConversationExists(supabase: any, cartId: string, env: any): Promise<number | null> {
     try {
         const baseUrl = env.CHATWOOT_BASE_URL;
         const accountId = env.CHATWOOT_ACCOUNT_ID;
@@ -8,7 +8,7 @@ async function ensureConversationExists(supabase: any, cartId: string, env: any)
         const contactId = parseInt(env.CHATWOOT_CONTACT_ID);
         const sourceId = env.CHATWOOT_SOURCE_ID;
 
-        // 1. Verificar si ya existe conversación para este carrito
+        // 1. Verificar si ya existe conversación para este carrito en BD
         const { data: cartData } = await supabase
             .from("carts")
             .select("chatwoot_conversation_id")
@@ -20,7 +20,37 @@ async function ensureConversationExists(supabase: any, cartId: string, env: any)
             return cartData.chatwoot_conversation_id;
         }
 
-        // 2. Si no existe, crear nueva conversación
+        // 2. EXTRAER conversation_id embebido en el cart_id
+        // Formato: chatwoot_<id_hash>_<num1>_<num2>_<conversationId>
+        // Ejemplo: chatwoot_cmkrh42x605q011mugkc9sji9_34_44_14 → conversationId = 14 (último)
+        let conversationId: number | null = null;
+        if (cartId.startsWith("chatwoot_")) {
+            const parts = cartId.replace("chatwoot_", "").split("_");
+            const extracted = parseInt(parts[parts.length - 1]); // ÚLTIMO número
+            if (!isNaN(extracted) && extracted > 0) {
+                conversationId = extracted;
+                console.log(`[CHATWOOT-ENSURE] Conversation ID extraído del cart_id: ${conversationId}`);
+
+                // Guardar en BD para futuras referencias
+                await supabase
+                    .from("carts")
+                    .update({
+                        chatwoot_conversation_id: conversationId,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq("id", cartId);
+
+                return conversationId;
+            }
+        }
+
+        // 3. Si CREATE_CONVERSATION_FALLBACK está desactivado, no crear nueva
+        if (env.CREATE_CONVERSATION_FALLBACK === "false") {
+            console.log(`[CHATWOOT-ENSURE] CREATE_CONVERSATION_FALLBACK=false: No se creará conversación nueva`);
+            return null;
+        }
+
+        // 4. Fallback: Crear nueva conversación (solo si está habilitado)
         console.log(`[CHATWOOT-ENSURE] Creando nueva conversación para carrito ${cartId}...`);
         const createResp = await fetch(
             `${baseUrl}/api/v1/accounts/${accountId}/conversations`,
@@ -46,14 +76,14 @@ async function ensureConversationExists(supabase: any, cartId: string, env: any)
         }
 
         const createData = await createResp.json();
-        const conversationId = createData.data?.id;
+        conversationId = createData.data?.id;
 
         if (!conversationId) {
             console.error("[CHATWOOT-ENSURE] No se devolvió conversation ID");
             return null;
         }
 
-        // 3. Guardar conversation ID en la tabla carts
+        // 5. Guardar conversation ID en la tabla carts
         await supabase
             .from("carts")
             .update({
@@ -180,63 +210,23 @@ export async function handoverToHuman(supabase: any, args: any, env: any) {
         const baseUrl = env.CHATWOOT_BASE_URL;
         const accountId = env.CHATWOOT_ACCOUNT_ID;
         const apiToken = env.CHATWOOT_API_TOKEN;
-        const inboxId = parseInt(env.CHATWOOT_INBOX_ID);
-        const contactId = parseInt(env.CHATWOOT_CONTACT_ID);
-        const sourceId = env.CHATWOOT_SOURCE_ID;
 
         console.log(`[CHATWOOT] Iniciando derivación para carrito: ${cart_id}`);
-        console.log(`[CHATWOOT] Inbox: ${inboxId}, Contact: ${contactId}`);
 
-        let conversationId: number;
-
-        // 1. Verificar si ya existe conversación para este carrito
-        const { data: cartData } = await supabase
-            .from("carts")
-            .select("chatwoot_conversation_id")
-            .eq("id", cart_id)
-            .single();
-
-        if (cartData?.chatwoot_conversation_id) {
-            conversationId = cartData.chatwoot_conversation_id;
-            console.log(`[CHATWOOT] Usando conversación existente: ${conversationId}`);
-        } else {
-            // 2. Crear nueva conversación en Chatwoot
-            console.log(`[CHATWOOT] Creando nueva conversación...`);
-            const createResp = await fetch(
-                `${baseUrl}/api/v1/accounts/${accountId}/conversations`,
-                {
-                    method: "POST",
-                    headers: {
-                        "Content-Type": "application/json",
-                        "api_access_token": apiToken,
-                        "Accept": "application/json"
-                    },
-                    body: JSON.stringify({
-                        inbox_id: inboxId,
-                        contact_id: contactId,
-                        source_id: sourceId
-                    })
-                }
-            );
-
-            if (!createResp.ok) {
-                const errorText = await createResp.text();
-                console.error(`[CHATWOOT] Error creando conversación:`, errorText);
-                throw new Error(`Error creando conversación: ${createResp.status}`);
-            }
-
-            const createData = await createResp.json();
-            conversationId = createData.id;
-            console.log(`[CHATWOOT] Conversación creada: ${conversationId}`);
-
-            // Guardar en BD
-            await supabase
-                .from("carts")
-                .update({ chatwoot_conversation_id: conversationId })
-                .eq("id", cart_id);
+        // 1. Obtener conversación (extrayendo del cart_id o usando fallback)
+        const conversationId = await ensureConversationExists(supabase, cart_id, env);
+        
+        if (!conversationId) {
+            return {
+                content: [{
+                    type: "text",
+                    text: "❌ Error: No se pudo obtener la conversación de soporte. Por favor, intenta nuevamente o contacta a soporte."
+                }],
+                isError: true
+            };
         }
 
-        // 3. Cambiar estado de la conversación a "open"
+        // 2. Cambiar estado de la conversación a "open"
         const statusResponse = await fetch(
             `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}`,
             {
@@ -260,7 +250,7 @@ export async function handoverToHuman(supabase: any, args: any, env: any) {
 
         console.log(`[CHATWOOT] Conversación ${conversationId} abierta`);
 
-        // 4. Agregar etiquetas (opcional)
+        // 3. Agregar etiquetas (opcional)
         try {
             const labelsResponse = await fetch(
                 `${baseUrl}/api/v1/accounts/${accountId}/conversations/${conversationId}/labels`,
@@ -272,7 +262,7 @@ export async function handoverToHuman(supabase: any, args: any, env: any) {
                         "Accept": "application/json"
                     },
                     body: JSON.stringify({
-                        labels: ["handover", reason.toLowerCase().replace(/\s+/g, "_")]
+                        labels: ["handover", reason]
                     })
                 }
             );
@@ -313,10 +303,34 @@ export async function handoverForPurchase(supabase: any, args: any, env: any) {
 
         console.log(`[HANDOVER-PURCHASE] Iniciando compra para carrito: ${cart_id}`);
 
-        // 1. LIMPIEZA PREVENTIVA: por si el cron no ejecutó
+        // 1. VALIDAR QUE EL CARRITO NO ESTÉ YA RESERVADO
+        const { data: cartData, error: cartError } = await supabase
+            .from("carts")
+            .select("status")
+            .eq("id", cart_id)
+            .single();
+
+        if (cartError && cartError.code !== 'PGRST116') {
+            console.error("[HANDOVER-PURCHASE] Error al validar carrito:", cartError.message);
+        }
+
+        console.log(`[HANDOVER-PURCHASE] Estado del carrito: ${cartData?.status || 'no encontrado'}`);
+
+        if (cartData?.status === "reserved") {
+            console.log(`[HANDOVER-PURCHASE] Carrito ya está en estado reserved, bloqueando intento`);
+            return {
+                content: [{
+                    type: "text",
+                    text: "⏳ **Tu carrito fue pasado a proceso de compra con anterioridad y fue derivado a un agente humano.** Por favor espera a que se comunique contigo para finalizar los detalles. No puedes proceder nuevamente."
+                }],
+                isError: true
+            };
+        }
+
+        // 2. LIMPIEZA PREVENTIVA: por si el cron no ejecutó
         await cleanupExpiredReservations(supabase);
 
-        // 2. OBTENER ITEMS DEL CARRITO
+        // 3. OBTENER ITEMS DEL CARRITO
         const { data: cartItems, error: itemsError } = await supabase
             .from("cart_items")
             .select("product_id, qty, price")
@@ -404,10 +418,9 @@ export async function handoverForPurchase(supabase: any, args: any, env: any) {
         console.log(`[HANDOVER-PURCHASE] Carrito ${cart_id} marcado como reservado`);
 
         // 6. DERIVAR A HUMANO PARA PROCESAR PAGO
-        const labelReason = `PAGO: ${reason}`.replace(/\s+/g, "_").toLowerCase();
         const handoverResult = await handoverToHuman(supabase, {
             cart_id,
-            reason: labelReason
+            reason: `Compra: ${reason}`
         }, env);
 
         // 7. RESPUESTA FINAL
