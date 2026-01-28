@@ -1,5 +1,6 @@
 import { expect, test, vi } from 'vitest';
 import { listProducts } from '../../src/actions/products.js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 // --- MOCKS ---
 // Simulamos la estructura encadenada de Supabase:
@@ -25,7 +26,7 @@ const mockSupabase = {
             })
         })
     })
-};
+} as unknown as SupabaseClient;
 
 // --- TESTS ---
 
@@ -33,11 +34,11 @@ test('listProducts debería convertir búsqueda "pantalon" (sin tilde) a fuzzy m
     // 1. Ejecutamos la lógica con "pantalon" (error común de usuario)
     const result = await listProducts(
         mockSupabase,
-        { query: "pantalon" }
+        { name: "pantalon" }
     );
 
     // 2. Verificamos que la función llamó a Supabase
-    expect(mockSupabase.from).toHaveBeenCalledWith('products');
+    expect((mockSupabase.from as any)).toHaveBeenCalledWith('products');
 
     // 3. Verificamos que generó un resultado válido
     expect(result.content).toBeDefined();
@@ -57,14 +58,14 @@ test('listProducts debería manejar búsquedas sin resultados', async () => {
                 })
             })
         })
-    };
+    } as unknown as SupabaseClient;
 
     const result = await listProducts(
         mockEmptySupabase,
-        { query: "no_existe_este_producto" }
+        { name: "no_existe_este_producto" }
     );
 
     // Verificamos que se llamó a la DB (el mock captura las llamadas)
-    expect(mockEmptySupabase.from).toHaveBeenCalled();
+    expect((mockEmptySupabase.from as any)).toHaveBeenCalled();
     expect(result.content).toBeDefined();
 });
